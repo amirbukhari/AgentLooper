@@ -104,7 +104,12 @@
         <span id="scheduler-text" class="text-xs font-bold text-slate-300">OS Ticking (1s)</span>
       </div>
       <div id="google-account-badge" class="flex items-center gap-2">
-        <!-- Populated dynamically by updateGoogleAuthUI() -->
+        <button id="google-signin-btn-header" onclick="switchLeftTab('gdrive'); document.getElementById('google-client-id')?.focus();" class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 flex items-center gap-1.5 transition-colors">
+          <i data-lucide="log-in" class="w-3.5 h-3.5 text-amber-500"></i>Sign in with Google
+        </button>
+        <span id="google-connected-badge-header" class="hidden text-xs px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-xl inline-flex items-center gap-1.5">
+          <i data-lucide="user-check" class="w-3.5 h-3.5"></i><span id="google-account-email-header">Connected</span>
+        </span>
       </div>
     </div>
   </header>
@@ -580,19 +585,18 @@
 
     // System Setup on Load
     window.onload = function() {
-      lucide.createIcons();
-      
-      // Initialize first workspace using pre-loaded newsletter profiles
-      loadWorkspaceState(currentWorkspace, 'news');
-      
-      // Render initial workspace dropdown
-      rebuildWorkspaceDropdown();
-
-      // Restore Google sign-in (Drive + Gemini) if a live session token exists
-      restoreGoogleSession();
-
-      // Fire up the Orchestration Clock Tick
-      startGlobalScheduler();
+      // Each step runs independently — a failure in one (e.g. a blocked CDN icon
+      // script) must not prevent the rest of the UI, especially Google Sign-In, from wiring up.
+      const bootSteps = [
+        () => lucide.createIcons(),
+        () => loadWorkspaceState(currentWorkspace, 'news'),
+        () => rebuildWorkspaceDropdown(),
+        () => restoreGoogleSession(),
+        () => startGlobalScheduler()
+      ];
+      bootSteps.forEach(step => {
+        try { step(); } catch (err) { console.error("AgentOS boot step failed:", err); }
+      });
     };
 
     // Save and load workspace directory mechanics
@@ -994,18 +998,18 @@ Your output must be purely JSON, matching this schema:
     }
 
     function updateGoogleAuthUI() {
-      const badge = document.getElementById('google-account-badge');
+      const headerSigninBtn = document.getElementById('google-signin-btn-header');
+      const headerConnectedBadge = document.getElementById('google-connected-badge-header');
+      const headerEmailEl = document.getElementById('google-account-email-header');
       const statusLabel = document.getElementById('google-signin-status-label');
       const signinForm = document.getElementById('google-signin-form');
       const signedInPanel = document.getElementById('google-signed-in-panel');
       const emailEl = document.getElementById('google-account-email');
       const isSignedIn = !!googleAuth.accessToken;
 
-      if (badge) {
-        badge.innerHTML = isSignedIn
-          ? `<span class="text-xs px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-xl flex items-center gap-1.5"><i data-lucide="user-check" class="w-3.5 h-3.5"></i>${googleAuth.email || 'Connected'}</span>`
-          : `<button onclick="switchLeftTab('gdrive'); document.getElementById('google-client-id')?.focus();" class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 flex items-center gap-1.5 transition-colors"><i data-lucide="log-in" class="w-3.5 h-3.5 text-amber-500"></i>Sign in with Google</button>`;
-      }
+      if (headerSigninBtn) headerSigninBtn.classList.toggle('hidden', isSignedIn);
+      if (headerConnectedBadge) headerConnectedBadge.classList.toggle('hidden', !isSignedIn);
+      if (headerEmailEl) headerEmailEl.textContent = googleAuth.email || 'Connected';
 
       if (statusLabel) {
         statusLabel.textContent = isSignedIn ? "Connected" : "Not Connected";
