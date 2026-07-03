@@ -1,0 +1,2226 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentOS: Autonomous Spawner & Workspace Directory Schedulers</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind Configuration -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f5f3ff',
+              100: '#ede9fe',
+              500: '#8b5cf6',
+              600: '#7c3aed',
+              700: '#6d28d9',
+              900: '#4c1d95',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google API & Identity Script Client Loaders -->
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .code-font {
+      font-family: 'Fira Code', monospace;
+    }
+    /* Smooth custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #020617;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+    /* Animated pulses for agent lines */
+    @keyframes pulsePath {
+      0% { stroke-dashoffset: 24; }
+      100% { stroke-dashoffset: 0; }
+    }
+    .pulsing-connector {
+      stroke-dasharray: 6, 6;
+      animation: pulsePath 1s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-brand-500/30 selection:text-brand-200 overflow-x-hidden">
+
+  <!-- Header -->
+  <header class="border-b border-slate-900 bg-slate-950/80 backdrop-blur sticky top-0 z-50 px-6 py-4 flex flex-wrap justify-between items-center gap-4">
+    <div class="flex items-center gap-3">
+      <div class="p-2.5 bg-gradient-to-tr from-brand-600 to-indigo-600 text-white rounded-xl shadow-lg shadow-brand-500/20">
+        <i data-lucide="cpu" class="w-6 h-6"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl font-bold tracking-tight text-white">AgentOS</h1>
+          <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full">v2.2 Dynamic Directories</span>
+        </div>
+        <p class="text-xs text-slate-400">Autonomous Workspace Manager • Natural Language Ecosystem Architect • GDrive Connected</p>
+      </div>
+    </div>
+    
+    <!-- Environment Status Bar -->
+    <div class="flex items-center gap-4 flex-wrap">
+      <!-- Workspace Directory Switcher -->
+      <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1 rounded-xl">
+        <i data-lucide="folder" class="w-4 h-4 text-brand-400"></i>
+        <span class="text-xs font-semibold text-slate-400">Directory:</span>
+        <select id="workspace-directory-select" onchange="switchWorkspaceUI(this.value)" class="bg-transparent text-xs font-bold text-slate-200 focus:outline-none border-none cursor-pointer">
+          <!-- Dynamic options -->
+        </select>
+        <button onclick="createNewWorkspacePrompt()" class="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors" title="Create New Directory / Workspace">
+          <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 px-3 py-1.5 rounded-xl">
+        <span class="relative flex h-2.5 w-2.5">
+          <span id="scheduler-pulse" class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span id="scheduler-status" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        <span id="scheduler-text" class="text-xs font-bold text-slate-300">OS Ticking (1s)</span>
+      </div>
+      <span class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 rounded-xl border border-slate-800 flex items-center gap-1.5">
+        <i data-lucide="zap" class="w-3.5 h-3.5 text-yellow-500"></i>
+        Gemini 2.5 Flash
+      </span>
+    </div>
+  </header>
+
+  <!-- Main Grid Workspace -->
+  <main class="flex-1 max-w-[1600px] w-full mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+    
+    <!-- LEFT COLUMN: Workspace Panels (Tabs between Agents and GDrive) (4 cols) -->
+    <section class="lg:col-span-4 flex flex-col gap-6">
+      
+      <!-- Panel Selector Tabs -->
+      <div class="bg-slate-900/40 border border-slate-800/80 p-1.5 rounded-2xl flex gap-1">
+        <button id="tab-btn-agents" onclick="switchLeftTab('agents')" class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-slate-800 text-slate-100">
+          <i data-lucide="users" class="w-4 h-4"></i> Agent Hub
+        </button>
+        <button id="tab-btn-gdrive" onclick="switchLeftTab('gdrive')" class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200">
+          <i data-lucide="hard-drive" class="w-4 h-4"></i> GDrive Workspace
+          <span id="gdrive-badge" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        </button>
+      </div>
+
+      <!-- Left Tab Container 1: Agents Registry, Architect & Manual Creator -->
+      <div id="tab-panel-agents" class="flex flex-col gap-6">
+        
+        <!-- NLU AI Workspace Architect Spawner -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4 border-l-4 border-l-brand-500">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="sparkles" class="text-brand-400 w-5 h-5 animate-pulse"></i>
+              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">AI Ecosystem Architect</h2>
+            </div>
+            <span class="text-[10px] text-slate-400 bg-brand-500/10 px-2 py-0.5 rounded-full border border-brand-500/20 font-bold">Generative Spawning</span>
+          </div>
+
+          <div class="flex flex-col gap-3">
+            <p class="text-[11px] text-slate-400 italic leading-relaxed">Tell the architect what objective you want your workspace to perform. It will autonomously design, build, name, and connect 2-4 highly specialized agents with collaborative personas.</p>
+            <div>
+              <textarea id="ai-architect-goal" rows="3" placeholder="e.g., Build an autonomous travel agent ecosystem that writes comprehensive markdown itineraries and validates travel routes using GDrive..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 transition-colors placeholder:text-slate-600"></textarea>
+            </div>
+            <button onclick="autogenerateEcosystem()" id="btn-architect" class="w-full bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold py-2 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md shadow-brand-500/20">
+              <i data-lucide="magic" class="w-3.5 h-3.5"></i> Autogenerate Ecosystem
+            </button>
+          </div>
+        </div>
+
+        <!-- Manual Creator Node -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="plus-circle" class="text-indigo-400 w-5 h-5"></i>
+              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">Manual Agent Register</h2>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Agent Name</label>
+              <input type="text" id="new-agent-name" placeholder="e.g., Copywriter" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors">
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">System Instructions / Role Persona</label>
+              <textarea id="new-agent-persona" rows="3" placeholder="Define its limitations, goal, and output logic..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600"></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Visual Theme</label>
+                <select id="new-agent-theme" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500">
+                  <option value="brand">Purple (Default)</option>
+                  <option value="rose">Rose (Creative)</option>
+                  <option value="emerald">Emerald (Analytical)</option>
+                  <option value="cyan">Cyan (Logical)</option>
+                  <option value="amber">Amber (Skeptic)</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <button onclick="registerAgentFromUI()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/10">
+                  <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Spawn Agent
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Agent Directory -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4 max-h-[350px] overflow-hidden">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="users" class="text-indigo-400 w-5 h-5"></i>
+              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">Agent Directory</h2>
+            </div>
+            <span id="directory-count" class="text-xs px-2 py-0.5 bg-slate-950 text-slate-400 rounded-full border border-slate-800 font-mono">3 Active</span>
+          </div>
+
+          <!-- Directory list -->
+          <div id="agent-directory-list" class="overflow-y-auto pr-1 flex flex-col gap-2.5 flex-1">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Left Tab Container 2: GDrive Workspace Panel -->
+      <div id="tab-panel-gdrive" class="hidden flex flex-col gap-6">
+        <!-- Connection Configuration -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="cloud-lightning" class="text-amber-400 w-5 h-5"></i>
+              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">GDrive Connection</h2>
+            </div>
+            <span id="gdrive-status-label" class="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold">Simulated/Sandbox</span>
+          </div>
+
+          <div class="flex flex-col gap-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Connector Engine Mode</label>
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="setGDriveMode('sandbox')" id="btn-gdrive-sandbox" class="py-1.5 rounded-lg text-xs font-bold transition-all border border-brand-500 bg-brand-500/10 text-brand-300">
+                  Sandbox
+                </button>
+                <button onclick="setGDriveMode('real')" id="btn-gdrive-real" class="py-1.5 rounded-lg text-xs font-bold transition-all border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200">
+                  Real OAuth2
+                </button>
+              </div>
+            </div>
+
+            <!-- Credentials Box (Only visible for real integration) -->
+            <div id="gdrive-credentials-form" class="hidden flex flex-col gap-2 bg-slate-950 p-3 rounded-xl border border-slate-900">
+              <p class="text-[10px] text-slate-400 italic mb-1 leading-relaxed">Enter your credentials to link your physical Google Drive. Permissions read/write inside an <b>AgentOS Workspace</b> folder.</p>
+              <div>
+                <label class="block text-[9px] font-semibold text-slate-500 uppercase">OAuth Client ID</label>
+                <input type="text" id="gdrive-client-id" placeholder="your-client-id.apps.googleusercontent.com" class="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300">
+              </div>
+              <div>
+                <label class="block text-[9px] font-semibold text-slate-500 uppercase">Google API Key</label>
+                <input type="password" id="gdrive-api-key" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300">
+              </div>
+              <button onclick="authenticateRealGoogleDrive()" class="mt-2 w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-1.5 rounded text-xs transition-all flex items-center justify-center gap-1">
+                <i data-lucide="key" class="w-3.5 h-3.5"></i> Establish Auth Connection
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Google Drive File Explorer -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex-1 flex flex-col gap-4">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="folder-open" class="text-indigo-400 w-5 h-5"></i>
+              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">Workspace Explorer</h2>
+            </div>
+            <button onclick="syncGDriveUI()" class="p-1 text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/15 rounded transition-all">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <!-- Add File Manually to Drive -->
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-900/80 flex flex-col gap-2">
+            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Inject File to Drive Workspace</span>
+            <div class="grid grid-cols-3 gap-2">
+              <input type="text" id="manual-file-name" placeholder="data.txt" class="col-span-2 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200">
+              <button onclick="createManualDriveFile()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold py-1 rounded-lg transition-all flex items-center justify-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Write
+              </button>
+            </div>
+            <textarea id="manual-file-content" rows="2" placeholder="File text content for agents to read..." class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300"></textarea>
+          </div>
+
+          <!-- Interactive File Directory list -->
+          <div class="flex-1 overflow-y-auto max-h-[250px] pr-1 flex flex-col gap-2" id="gdrive-file-list">
+            <!-- Dynamic files -->
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- CENTER COLUMN: Live Network Graph & Action Form (5 cols) -->
+    <section class="lg:col-span-5 flex flex-col gap-6">
+      
+      <!-- Network Visual Canvas -->
+      <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col gap-3 min-h-[350px] relative animate-fade-in">
+        <div class="flex justify-between items-center">
+          <div class="flex items-center gap-2">
+            <i data-lucide="network" class="text-emerald-400 w-4.5 h-4.5"></i>
+            <span class="text-xs font-bold uppercase text-slate-300 tracking-wider">Live Spawn & Trigger Map</span>
+          </div>
+          <span class="text-[10px] text-slate-500 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span> Real-time Graph Visualizer
+          </span>
+        </div>
+
+        <!-- SVG Visual Container -->
+        <div class="flex-1 bg-slate-950 border border-slate-900 rounded-xl relative overflow-hidden min-h-[250px] flex items-center justify-center">
+          <svg id="network-svg" class="absolute inset-0 w-full h-full pointer-events-none">
+            <!-- Render connectors dynamically -->
+          </svg>
+          <div id="network-nodes-container" class="absolute inset-0 z-10 pointer-events-none">
+            <!-- Floating nodes rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Trigger Core Action Panel -->
+      <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4">
+        <div class="flex items-center gap-2 border-b border-slate-800/60 pb-3">
+          <i data-lucide="clock" class="text-amber-400 w-5 h-5"></i>
+          <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">Scheduler & Task Initiator</h2>
+        </div>
+
+        <div class="flex flex-col gap-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Target Agent</label>
+              <select id="task-target-agent" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand-500">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Task Type</label>
+              <select id="task-type" onchange="toggleTaskScheduling()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand-500">
+                <option value="once">Immediate Run (Once)</option>
+                <option value="loop">Loop Scheduler (Recurring)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Recurring scheduling options -->
+          <div id="scheduling-options" class="hidden grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-900">
+            <div>
+              <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Interval (Seconds)</label>
+              <input type="number" id="task-interval" value="10" min="5" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Run Limit (Iterations)</label>
+              <input type="number" id="task-iterations" value="3" min="1" max="20" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Core Task / Prompt Content</label>
+            <textarea id="task-prompt" rows="3" placeholder="Instruction to fire off the agent ecosystem pipeline..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-colors placeholder:text-slate-600"></textarea>
+          </div>
+
+          <div class="flex gap-2">
+            <button onclick="enqueueNewTask()" class="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/10">
+              <i data-lucide="play" class="w-3.5 h-3.5"></i> Trigger Ecosystem Loop
+            </button>
+            <button id="btn-pause-os" onclick="toggleScheduler()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 p-2.5 rounded-xl border border-slate-700/60 transition-all" title="Toggle System Scheduler Clock">
+              <i data-lucide="pause" id="scheduler-toggle-icon" class="w-4.5 h-4.5"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT COLUMN: Message Flow & Task Queue (3 cols) -->
+    <section class="lg:col-span-3 flex flex-col gap-6">
+      
+      <!-- Task Queue Monitoring Panel -->
+      <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col gap-3 max-h-[220px] overflow-hidden">
+        <div class="flex justify-between items-center border-b border-slate-800/60 pb-2">
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="list-ordered" class="text-cyan-400 w-4 h-4"></i>
+            <span class="text-xs font-bold uppercase text-slate-300 tracking-wider">Task Queue / Loop Scheduler</span>
+          </div>
+          <span id="queue-badge" class="text-[10px] px-2 py-0.5 bg-slate-950 text-slate-400 rounded-full border border-slate-800 font-mono">0 pending</span>
+        </div>
+
+        <div id="task-queue-list" class="flex-1 overflow-y-auto pr-1 flex flex-col gap-2">
+          <!-- Dynamic Tasks -->
+          <div id="queue-empty-state" class="text-center py-6 text-slate-500 text-xs italic">
+            No active schedules or pending tasks in queue
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-time Live Interaction Console -->
+      <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 shadow-xl flex-1 flex flex-col gap-3 min-h-[400px] overflow-hidden">
+        <div class="flex justify-between items-center border-b border-slate-800/60 pb-2">
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="terminal" class="text-brand-400 w-4.5 h-4.5"></i>
+            <span class="text-xs font-bold uppercase text-slate-300 tracking-wider">AgentOS Console Feed</span>
+          </div>
+          <button onclick="clearConsole()" class="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear Feed
+          </button>
+        </div>
+
+        <!-- Scrollable console events list -->
+        <div id="console-feed" class="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 font-mono text-[11px] leading-relaxed">
+          <!-- Messages and spawn notifications go here -->
+          <div class="text-slate-500 italic text-center py-12">
+            Workspace initialized. Fire a task manually or run a demo ecosystem preset to observe recursive agent execution.
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Details / Memory Inspection Modal -->
+  <div id="agent-inspect-modal" class="hidden fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[85vh]">
+      <div class="px-6 py-4 bg-slate-950/40 border-b border-slate-800 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <i data-lucide="database" class="text-brand-400 w-5 h-5"></i>
+          <span class="font-bold text-slate-200">Inspect Agent Internal States</span>
+        </div>
+        <button onclick="closeInspectModal()" class="text-slate-400 hover:text-slate-100">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex flex-col gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Agent Details</label>
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800/60 flex flex-col gap-1">
+            <p class="text-xs text-slate-300"><strong class="text-brand-400">ID Name:</strong> <span id="modal-agent-name" class="font-mono">Critic</span></p>
+            <p class="text-xs text-slate-300 mt-1"><strong class="text-brand-400">System Role:</strong></p>
+            <p id="modal-agent-persona" class="text-xs text-slate-400 mt-1 italic whitespace-pre-wrap leading-relaxed"></p>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Local Ephemeral Memory logs</label>
+          <div id="modal-agent-memory" class="bg-slate-950 p-4 rounded-xl border border-slate-800/60 font-mono text-[11px] text-slate-400 max-h-56 overflow-y-auto flex flex-col gap-2">
+            <!-- Dynamic list -->
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-3 bg-slate-950/40 border-t border-slate-800 flex justify-end">
+        <button onclick="closeInspectModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition-all">
+          Close Window
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GDrive File Inspection Modal -->
+  <div id="file-inspect-modal" class="hidden fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[85vh]">
+      <div class="px-6 py-4 bg-slate-950/40 border-b border-slate-800 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <i data-lucide="file-text" class="text-cyan-400 w-5 h-5"></i>
+          <span id="inspect-file-name" class="font-bold text-slate-200">Inspect Google Drive File</span>
+        </div>
+        <button onclick="closeFileInspectModal()" class="text-slate-400 hover:text-slate-100">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex flex-col gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">File Payload</label>
+          <pre id="inspect-file-content" class="bg-slate-950 p-4 rounded-xl border border-slate-800/60 font-mono text-xs text-slate-300 max-h-96 overflow-y-auto whitespace-pre-wrap leading-relaxed"></pre>
+        </div>
+      </div>
+      <div class="px-6 py-3 bg-slate-950/40 border-t border-slate-800 flex justify-between items-center">
+        <span id="inspect-file-meta" class="text-[10px] text-slate-500 font-mono">Size: -- bytes</span>
+        <button onclick="closeFileInspectModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition-all">
+          Close Window
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Toast Notifier -->
+  <div id="custom-toast" class="hidden fixed bottom-4 right-4 z-[99] transform translate-y-2 opacity-0 transition-all duration-300 bg-slate-900 border-l-4 border-brand-500 px-4 py-3 rounded-r-xl shadow-lg flex justify-between items-center gap-3">
+    <div class="flex items-center gap-2">
+      <i id="toast-icon" data-lucide="info" class="w-5 h-5 text-brand-400"></i>
+      <p id="toast-message" class="text-xs text-slate-300"></p>
+    </div>
+    <button onclick="dismissToast()" class="text-slate-400 hover:text-slate-200">
+      <i data-lucide="x" class="w-4 h-4"></i>
+    </button>
+  </div>
+
+  <script>
+    // Core Agent OS System State (Organized by active workspace Directory)
+    let workspaces = {
+      "Newsletter Directory": {
+        agents: {},
+        taskQueue: [],
+        positions: { 'User': { x: 50, y: 15 }, 'GDrive': { x: 85, y: 18 } },
+        completedTasksCount: 0,
+        mockGDriveFiles: [
+          { name: "campaign_targets.txt", size: "340 B", content: "Target: Tech professionals aged 25-45 experiencing elevated stress loads.\nGoal: Integrate productivity flows with micro-breaks and task planning templates to increase long-term user retention.", updated: "2 mins ago" },
+          { name: "industry_trends.md", size: "1.1 KB", content: "# Tech trends inside the 2026 Ecosystem\n1. Spawning dynamic micro-agents is standard operating practice.\n2. Autonomous loop schedulers are replacing linear pipelines.\n3. Real-time observability on messaging lines minimizes computational loops.", updated: "5 mins ago" }
+        ]
+      }
+    };
+    
+    let currentWorkspace = "Newsletter Directory";
+
+    // Active reference shortcut pointers
+    let agents = {};
+    let taskQueue = [];
+    let completedTasksCount = 0;
+    let mockGDriveFiles = [];
+    let positions = {
+      'User': { x: 50, y: 15 },
+      'GDrive': { x: 85, y: 18 }
+    };
+
+    // Google Drive Integration States
+    let gDriveMode = 'sandbox'; // 'sandbox' | 'real'
+    let realGDriveInited = false;
+    let realGDriveAuthed = false;
+    let tokenClient = null;
+    let workspaceFolderId = null;
+
+    // Global ticking engine config (1-second clock loop)
+    let isTicking = true;
+    let clockIntervalId = null;
+
+    // Toast Control timer helper
+    let toastTimeoutId = null;
+
+    // Pre-made workspace templates to immediately prove dynamic creations
+    const presets = {
+      news: {
+        agents: {
+          "Director": {
+            persona: "You are the central Planning Agent. Your job is to draft a newsletter topic. You must spawn secondary agents to critique and publish it.\n\nYOU HAVE AGENT CONTROL TOOLS via text commands:\n- To SPAWN an agent: Use tag [CREATE_AGENT: name=\"AgentName\", persona=\"Persona detail...\"]\n- To TRIGGER/DELEGATE a task: Use tag [TRIGGER_AGENT: name=\"AgentName\", task=\"Instructions...\"]\n- To SCHEDULE repeating updates: Use tag [SCHEDULE_LOOP: name=\"AgentName\", interval_sec=\"10\", limit=\"2\", task=\"Task detail...\"]\n\nWhen a topic is given, SPAWN an Editor agent to critique, and a Designer to format. Then TRIGGER them.",
+            theme: "brand"
+          },
+          "Editor": {
+            persona: "You analyze draft summaries for intellectual accuracy, style inconsistencies, and logical flaws. Give constructive bullet critiques, then TRIGGER 'Designer' to assemble.",
+            theme: "amber"
+          },
+          "Designer": {
+            persona: "You turn raw research and criticism into clean markdown structures with beautiful dividers and titles. Do not create or trigger further, just wrap the formatted output elegantly.",
+            theme: "emerald"
+          }
+        },
+        initialTask: {
+          target: "Director",
+          prompt: "Draft an exciting short overview on commercial space exploration advances. Spawn other agents to clean up and finalize."
+        }
+      },
+      code: {
+        agents: {
+          "Architect": {
+            persona: "You write clear object-oriented structural specs for Python algorithms. SPAWN 'Coder' and 'Tester' agents. Then, TRIGGER the 'Coder' with your architectural plan, instructing them to trigger 'Tester' immediately after writing the code block.",
+            theme: "cyan"
+          },
+          "Coder": {
+            persona: "You receive python architectural blueprints and write perfectly clean, commented code. After writing, TRIGGER 'Tester' to check for syntax risks or runtime leaks.",
+            theme: "emerald"
+          },
+          "Tester": {
+            persona: "You write automated test cases for provided Python scripts to find edge conditions or memory bottlenecks.",
+            theme: "rose"
+          }
+        },
+        initialTask: {
+          target: "Architect",
+          prompt: "We need a robust, fully-commented dynamic programming algorithm in Python to compute the Longest Common Subsequence of two sequences."
+        }
+      }
+    };
+
+    // System Setup on Load
+    window.onload = function() {
+      lucide.createIcons();
+      
+      // Initialize first workspace using pre-loaded newsletter profiles
+      loadWorkspaceState(currentWorkspace, 'news');
+      
+      // Render initial workspace dropdown
+      rebuildWorkspaceDropdown();
+
+      // Fire up the Orchestration Clock Tick
+      startGlobalScheduler();
+    };
+
+    // Save and load workspace directory mechanics
+    function saveCurrentWorkspaceState() {
+      if (!currentWorkspace) return;
+      workspaces[currentWorkspace] = {
+        agents: JSON.parse(JSON.stringify(agents)),
+        taskQueue: JSON.parse(JSON.stringify(taskQueue)),
+        positions: JSON.parse(JSON.stringify(positions)),
+        completedTasksCount: completedTasksCount,
+        mockGDriveFiles: JSON.parse(JSON.stringify(mockGDriveFiles))
+      };
+    }
+
+    function loadWorkspaceState(workspaceName, presetFallback = 'news') {
+      const state = workspaces[workspaceName];
+      if (state) {
+        agents = state.agents;
+        taskQueue = state.taskQueue;
+        positions = state.positions;
+        completedTasksCount = state.completedTasksCount;
+        mockGDriveFiles = state.mockGDriveFiles;
+      } else {
+        // Create new directory entry
+        workspaces[workspaceName] = {
+          agents: {},
+          taskQueue: [],
+          positions: { 'User': { x: 50, y: 15 }, 'GDrive': { x: 85, y: 18 } },
+          completedTasksCount: 0,
+          mockGDriveFiles: []
+        };
+        agents = workspaces[workspaceName].agents;
+        taskQueue = workspaces[workspaceName].taskQueue;
+        positions = workspaces[workspaceName].positions;
+        completedTasksCount = workspaces[workspaceName].completedTasksCount;
+        mockGDriveFiles = workspaces[workspaceName].mockGDriveFiles;
+
+        if (presetFallback) {
+          // Setup with a preset automatically if requested
+          const config = presets[presetFallback];
+          Object.entries(config.agents).forEach(([name, details]) => {
+            agents[name] = {
+              id: name,
+              persona: details.persona,
+              theme: details.theme || 'brand',
+              memory: [`Initialized into directory via preset.`],
+              createdTime: new Date()
+            };
+          });
+          document.getElementById('task-prompt').value = config.initialTask.prompt;
+        }
+      }
+      
+      currentWorkspace = workspaceName;
+      calculateNodePositions();
+      
+      // Sync UI Components
+      rebuildAgentListUI();
+      rebuildTargetSelectUI();
+      rebuildQueueUI();
+      redrawVisualGraph();
+      syncGDriveUI();
+      
+      document.getElementById('metric-steps').innerHTML = `<i data-lucide="hash" class="w-3.5 h-3.5 text-brand-400"></i> Steps Completed: ${completedTasksCount}`;
+      lucide.createIcons();
+    }
+
+    function switchWorkspaceUI(workspaceName) {
+      if (isRunningTask()) {
+        showToast("Cannot switch workspaces while an agent task is active.", "alert-triangle", "error");
+        // Revert select input index
+        document.getElementById('workspace-directory-select').value = currentWorkspace;
+        return;
+      }
+      saveCurrentWorkspaceState();
+      loadWorkspaceState(workspaceName, null);
+      logConsoleEvent("SYSTEM", `Swapped directories. Now observing active Workspace: [${workspaceName}]`, "success");
+      showToast(`Directory Swapped to: ${workspaceName}`, "folder");
+    }
+
+    function createNewWorkspacePrompt() {
+      const name = prompt("Enter a unique name for the new Workspace Directory:");
+      if (!name || !name.trim()) return;
+      const cleanName = name.trim();
+      if (workspaces[cleanName]) {
+        showToast("A directory with that name already exists.", "alert-triangle", "error");
+        return;
+      }
+
+      saveCurrentWorkspaceState();
+      // Initialize empty directory space
+      workspaces[cleanName] = {
+        agents: {},
+        taskQueue: [],
+        positions: { 'User': { x: 50, y: 15 }, 'GDrive': { x: 85, y: 18 } },
+        completedTasksCount: 0,
+        mockGDriveFiles: []
+      };
+
+      // Select and Load
+      rebuildWorkspaceDropdown();
+      document.getElementById('workspace-directory-select').value = cleanName;
+      loadWorkspaceState(cleanName, null);
+
+      logConsoleEvent("SYSTEM", `Created brand new directory pipeline: [${cleanName}]`, "success");
+      showToast(`Created Workspace Directory: ${cleanName}`, "folder-plus");
+    }
+
+    function rebuildWorkspaceDropdown() {
+      const select = document.getElementById('workspace-directory-select');
+      select.innerHTML = '';
+      Object.keys(workspaces).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+      select.value = currentWorkspace;
+    }
+
+    // Dynamic AI Architect Generator utilizing structured JSON responses from Gemini
+    async function autogenerateEcosystem() {
+      const goal = document.getElementById('ai-architect-goal').value.trim();
+      const btn = document.getElementById('btn-architect');
+
+      if (!goal) {
+        showToast("Please describe what ecosystem you want to build.", "alert-triangle", "error");
+        return;
+      }
+
+      // UI state updates
+      btn.disabled = true;
+      btn.innerHTML = `<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5"></div> Architecting ecosystem...`;
+      logConsoleEvent("SYSTEM", `Sending architecture directives to Gemini Creator for task: "${goal}"`, "info");
+
+      const systemPrompt = `You are a expert Multi-Agent Architect. Your job is to analyze the user's high-level goal and design a complete, interconnected, collaborative system of 2 to 4 micro-agents to achieve that goal.
+Each agent should have a distinct, action-oriented persona and guidelines.
+Your output must be purely JSON, matching this schema:
+{
+  "agents": [
+    {
+      "name": "SingleWordIdentifierName",
+      "persona": "Extremely detailed prompt guidelines. Must instruct them on how and when to trigger other agents using tags like [TRIGGER_AGENT: name=\\\"OtherAgent\\\", task=\\\"Description\\\"]",
+      "theme": "one of: brand, rose, emerald, cyan, amber"
+    }
+  ],
+  "initialTask": {
+    "targetAgent": "The name of the starter agent to initiate work",
+    "prompt": "An initial prompt instructing the targetAgent to kick off the objective"
+  }
+}`;
+
+      const payload = {
+        contents: [{ parts: [{ text: `User Goal Request: "${goal}"` }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              agents: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    name: { type: "STRING" },
+                    persona: { type: "STRING" },
+                    theme: { type: "STRING" }
+                  },
+                  required: ["name", "persona", "theme"]
+                }
+              },
+              initialTask: {
+                type: "OBJECT",
+                properties: {
+                  targetAgent: { type: "STRING" },
+                  prompt: { type: "STRING" }
+                },
+                required: ["targetAgent", "prompt"]
+              }
+            },
+            required: ["agents", "initialTask"]
+          }
+        }
+      };
+
+      try {
+        const jsonResponseText = await callGemini(payload);
+        const ecosystem = JSON.parse(jsonResponseText);
+
+        logConsoleEvent("SYSTEM", `Ecosystem architecture schema received. Deploying agents to Directory...`, "info");
+
+        // Inject generated agents WITHOUT deleting previous manual ones
+        ecosystem.agents.forEach(agent => {
+          const cleanName = agent.name.replace(/[^a-zA-Z0-9]/g, ""); // Keep alphanumeric
+          agents[cleanName] = {
+            id: cleanName,
+            persona: agent.persona,
+            theme: agent.theme,
+            memory: [`Spawned autonomously by the AI Architect Ecosystem Builder.`],
+            createdTime: new Date()
+          };
+          logConsoleEvent("SYSTEM", `🤖 Autonomous Spawner: Registered Agent [${cleanName}]`, "success");
+        });
+
+        // Recalculate positions & updates
+        calculateNodePositions();
+        rebuildAgentListUI();
+        rebuildTargetSelectUI();
+        redrawVisualGraph();
+
+        // Load the initial recommended starter task into the prompt panel
+        document.getElementById('task-prompt').value = ecosystem.initialTask.prompt;
+        document.getElementById('task-target-agent').value = ecosystem.initialTask.targetAgent;
+
+        showToast("Successfully deployed custom dynamic ecosystem!", "check-circle");
+        document.getElementById('ai-architect-goal').value = ""; // Clear
+      } catch (err) {
+        console.error("Architect spawning error:", err);
+        logConsoleEvent("SYSTEM", `Failed to generate architecture: ${err.message}`, "error");
+        showToast("Architecture generation failed.", "alert-triangle", "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="magic" class="w-3.5 h-3.5"></i> Autogenerate Ecosystem`;
+        lucide.createIcons();
+      }
+    }
+
+    // Preset Orchestrator Configuration
+    function loadDemoPreset(presetName) {
+      if (isRunningTask()) {
+        showToast("Clear active running tasks before loading presets.", "alert-triangle", "error");
+        return;
+      }
+      
+      // Clear current active pointers, rebuild positions
+      agents = {};
+      taskQueue = [];
+      positions = { 
+        'User': { x: 50, y: 15 },
+        'GDrive': { x: 85, y: 18 }
+      };
+      
+      const config = presets[presetName];
+      
+      // Register all preset agents
+      Object.entries(config.agents).forEach(([name, details]) => {
+        agents[name] = {
+          id: name,
+          persona: details.persona,
+          theme: details.theme || 'brand',
+          memory: [`Initialized into directory via ${presetName} preset.` ],
+          createdTime: new Date()
+        };
+      });
+
+      calculateNodePositions();
+      
+      // Update UI panels
+      rebuildAgentListUI();
+      rebuildTargetSelectUI();
+      redrawVisualGraph();
+      clearConsole();
+      
+      // Inject details into UI Trigger Panel
+      document.getElementById('task-prompt').value = config.initialTask.prompt;
+      document.getElementById('task-target-agent').value = config.initialTask.target;
+      
+      showToast(`Loaded preset environment: ${presetName}`, "check-circle");
+    }
+
+    // Dynamic Tab Switching inside Left Sidebar
+    function switchLeftTab(tabId) {
+      const btnAgents = document.getElementById('tab-btn-agents');
+      const btnGDrive = document.getElementById('tab-btn-gdrive');
+      const panelAgents = document.getElementById('tab-panel-agents');
+      const panelGDrive = document.getElementById('tab-panel-gdrive');
+
+      if (tabId === 'agents') {
+        btnAgents.className = "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-slate-800 text-slate-100";
+        btnGDrive.className = "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+        panelAgents.classList.remove('hidden');
+        panelGDrive.classList.add('hidden');
+      } else {
+        btnGDrive.className = "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-slate-800 text-slate-100";
+        btnAgents.className = "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+        panelGDrive.classList.remove('hidden');
+        panelAgents.classList.add('hidden');
+      }
+    }
+
+    // Toggle real vs sandbox GDrive modes
+    function setGDriveMode(mode) {
+      gDriveMode = mode;
+      const btnSandbox = document.getElementById('btn-gdrive-sandbox');
+      const btnReal = document.getElementById('btn-gdrive-real');
+      const credsForm = document.getElementById('gdrive-credentials-form');
+      const statusLabel = document.getElementById('gdrive-status-label');
+      const driveBadge = document.getElementById('gdrive-badge');
+
+      if (mode === 'sandbox') {
+        btnSandbox.className = "py-1.5 rounded-lg text-xs font-bold transition-all border border-brand-500 bg-brand-500/10 text-brand-300";
+        btnReal.className = "py-1.5 rounded-lg text-xs font-bold transition-all border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200";
+        credsForm.classList.add('hidden');
+        statusLabel.textContent = "Simulated/Sandbox";
+        statusLabel.className = "text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold";
+        driveBadge.className = "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
+        showToast("Switched GDrive Connection to Offline Sandbox.", "info");
+      } else {
+        btnReal.className = "py-1.5 rounded-lg text-xs font-bold transition-all border border-brand-500 bg-brand-500/10 text-brand-300";
+        btnSandbox.className = "py-1.5 rounded-lg text-xs font-bold transition-all border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200";
+        credsForm.classList.remove('hidden');
+        statusLabel.textContent = realGDriveAuthed ? "Connected Real" : "Pending Auth";
+        statusLabel.className = realGDriveAuthed 
+          ? "text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-full font-bold"
+          : "text-[10px] px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/25 rounded-full font-bold";
+        driveBadge.className = realGDriveAuthed ? "w-2 h-2 rounded-full bg-emerald-400 animate-pulse" : "w-2 h-2 rounded-full bg-rose-400 animate-pulse";
+        showToast("Switched mode. Please fill credentials & complete OAuth initialization.", "cloud-lightning");
+      }
+      syncGDriveUI();
+    }
+
+    // Google API Real Client Authentication & Loader logic
+    function authenticateRealGoogleDrive() {
+      const clientId = document.getElementById('gdrive-client-id').value.trim();
+      const apiKey = document.getElementById('gdrive-api-key').value.trim();
+
+      if (!clientId || !apiKey) {
+        showToast("Real OAuth connection requires both a valid Client ID and API Key.", "alert-triangle", "error");
+        return;
+      }
+
+      gapi.load('client', async () => {
+        try {
+          await gapi.client.init({
+            apiKey: apiKey,
+            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+          });
+          realGDriveInited = true;
+
+          // Set up Token Client (using GIS API)
+          tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.resource',
+            callback: async (tokenResponse) => {
+              if (tokenResponse.error !== undefined) {
+                throw tokenResponse;
+              }
+              realGDriveAuthed = true;
+              document.getElementById('gdrive-status-label').textContent = "Connected Real";
+              document.getElementById('gdrive-status-label').className = "text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-full font-bold";
+              document.getElementById('gdrive-badge').className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+              showToast("Successfully Authenticated Real Google Drive!", "check-circle");
+              
+              // Run real initial sync workspace setup
+              await setupRealDriveWorkspaceFolder();
+            },
+          });
+
+          // Request access token
+          tokenClient.requestAccessToken({ prompt: 'consent' });
+
+        } catch (err) {
+          console.error("GAPI Authentication error:", err);
+          showToast(`Auth Failed: ${err.message || 'Check your console logs'}`, "alert-triangle", "error");
+        }
+      });
+    }
+
+    // Scan drive or instantiate "AgentOS Workspace" system directory
+    async function setupRealDriveWorkspaceFolder() {
+      if (!realGDriveAuthed) return;
+      try {
+        logConsoleEvent("SYSTEM", "Querying GDrive directory for existing AgentOS Workspace folder...", "info");
+        const response = await gapi.client.drive.files.list({
+          q: "name = 'AgentOS Workspace' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+          fields: 'files(id, name)',
+          spaces: 'drive'
+        });
+
+        const files = response.result.files;
+        if (files && files.length > 0) {
+          workspaceFolderId = files[0].id;
+          logConsoleEvent("SYSTEM", `Existing folder 'AgentOS Workspace' connected (ID: ${workspaceFolderId})`, "success");
+        } else {
+          // Instatitate a brand-new folder
+          logConsoleEvent("SYSTEM", "Creating fresh 'AgentOS Workspace' directory in your Google Drive...", "info");
+          const createResponse = await gapi.client.drive.files.create({
+            resource: {
+              name: 'AgentOS Workspace',
+              mimeType: 'application/vnd.google-apps.folder'
+            },
+            fields: 'id'
+          });
+          workspaceFolderId = createResponse.result.id;
+          logConsoleEvent("SYSTEM", `Successfully created Workspace folder (ID: ${workspaceFolderId})`, "success");
+        }
+        syncGDriveUI();
+      } catch (err) {
+        console.error("Error organizing GDrive directories:", err);
+        showToast("Error establishing Workspace directory.", "alert-triangle", "error");
+      }
+    }
+
+    // Browse and sync UI directory table (either sandbox local files array or real Drive lists)
+    async function syncGDriveUI() {
+      const container = document.getElementById('gdrive-file-list');
+      container.innerHTML = '';
+
+      if (gDriveMode === 'sandbox') {
+        if (!mockGDriveFiles || mockGDriveFiles.length === 0) {
+          container.innerHTML = `<p class="text-center text-slate-500 italic text-xs py-4">No Sandbox Files Sync'd.</p>`;
+          return;
+        }
+
+        mockGDriveFiles.forEach((file, index) => {
+          const div = document.createElement('div');
+          div.className = "flex justify-between items-center p-2.5 bg-slate-950 border border-slate-900 rounded-xl hover:border-slate-800 transition-colors cursor-pointer group";
+          div.innerHTML = `
+            <div class="flex-1 min-w-0" onclick="inspectDriveFile('${file.name}', false)">
+              <div class="flex items-center gap-1.5">
+                <i data-lucide="file-text" class="w-4 h-4 text-cyan-400"></i>
+                <h4 class="text-xs font-bold text-slate-300 truncate">${file.name}</h4>
+              </div>
+              <p class="text-[9px] text-slate-500 mt-0.5">Size: ${file.size} • Updated: ${file.updated}</p>
+            </div>
+            <button onclick="deleteDriveFile('${file.name}', false, event)" class="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-all">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          `;
+          container.appendChild(div);
+        });
+      } else {
+        // Handle Real Drive Workspace files
+        if (!realGDriveAuthed || !workspaceFolderId) {
+          container.innerHTML = `<p class="text-center text-rose-400 italic text-[11px] py-4">Authenticate your Real GDrive to enable file exploration panels.</p>`;
+          return;
+        }
+
+        try {
+          const response = await gapi.client.drive.files.list({
+            q: `'${workspaceFolderId}' in parents and trashed = false`,
+            fields: 'files(id, name, size, modifiedTime)',
+            spaces: 'drive'
+          });
+
+          const files = response.result.files;
+          if (!files || files.length === 0) {
+            container.innerHTML = `<p class="text-center text-slate-500 italic text-xs py-4">No Workspace files found in Drive. Write one using tools or the manual injector!</p>`;
+            return;
+          }
+
+          files.forEach(file => {
+            const sizeFormatted = file.size ? `${(file.size / 1024).toFixed(1)} KB` : '0 B';
+            const updatedTime = new Date(file.modifiedTime).toLocaleTimeString();
+            const div = document.createElement('div');
+            div.className = "flex justify-between items-center p-2.5 bg-slate-950 border border-slate-900 rounded-xl hover:border-slate-800 transition-colors cursor-pointer group";
+            div.innerHTML = `
+              <div class="flex-1 min-w-0" onclick="inspectDriveFile('${file.id}', true)">
+                <div class="flex items-center gap-1.5">
+                  <i data-lucide="file-text" class="w-4 h-4 text-emerald-400"></i>
+                  <h4 class="text-xs font-bold text-slate-300 truncate">${file.name}</h4>
+                </div>
+                <p class="text-[9px] text-slate-500 mt-0.5">Size: ${sizeFormatted} • ID: ${file.id.substring(0,6)}... • Modified: ${updatedTime}</p>
+              </div>
+              <button onclick="deleteDriveFile('${file.id}', true, event)" class="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-all">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            `;
+            container.appendChild(div);
+          });
+        } catch (err) {
+          console.error("GDrive Sync Directory Error:", err);
+          container.innerHTML = `<p class="text-center text-rose-500 italic text-[11px] py-4">Sync Error: Check developer logs.</p>`;
+        }
+      }
+      lucide.createIcons();
+    }
+
+    // User manual file uploads / creations
+    async function createManualDriveFile() {
+      const name = document.getElementById('manual-file-name').value.trim();
+      const content = document.getElementById('manual-file-content').value;
+
+      if (!name) {
+        showToast("You must provide a filename.", "alert-triangle", "error");
+        return;
+      }
+
+      if (gDriveMode === 'sandbox') {
+        const existingIdx = mockGDriveFiles.findIndex(f => f.name === name);
+        if (existingIdx !== -1) {
+          mockGDriveFiles[existingIdx].content = content;
+          mockGDriveFiles[existingIdx].size = `${content.length} B`;
+          mockGDriveFiles[existingIdx].updated = "Just now";
+        } else {
+          mockGDriveFiles.push({
+            name: name,
+            size: `${content.length} B`,
+            content: content,
+            updated: "Just now"
+          });
+        }
+        showToast(`Created Simulated File [${name}] in Sandbox GDrive`, "check-circle");
+        document.getElementById('manual-file-name').value = "";
+        document.getElementById('manual-file-content').value = "";
+        syncGDriveUI();
+        
+        // Dynamic pulse on user node
+        triggerVisualPulse('User', 'GDrive');
+      } else {
+        // Real Drive Create Block
+        if (!realGDriveAuthed || !workspaceFolderId) {
+          showToast("Real GDrive mode requires establishing credentials.", "alert-triangle", "error");
+          return;
+        }
+        try {
+          logConsoleEvent("SYSTEM", `Writing real file '${name}' to Google Drive workspace folder...`, "info");
+          
+          // Check if file exists inside directory folder first (for update vs create)
+          const search = await gapi.client.drive.files.list({
+            q: `'${workspaceFolderId}' in parents and name = '${name}' and trashed = false`,
+            fields: 'files(id)'
+          });
+
+          const existingFiles = search.result.files;
+          if (existingFiles && existingFiles.length > 0) {
+            // Update
+            const fileId = existingFiles[0].id;
+            await gapi.client.request({
+              path: `/upload/drive/v3/files/${fileId}`,
+              method: 'PATCH',
+              params: { uploadType: 'media' },
+              body: content
+            });
+            logConsoleEvent("SYSTEM", `File '${name}' updated successfully in Real Drive.`, "success");
+          } else {
+            // Create New File with metadata & contents
+            const metadata = {
+              name: name,
+              parents: [workspaceFolderId]
+            };
+            const boundary = 'foo_bar_boundary';
+            const delimiter = `\r\n--${boundary}\r\n`;
+            const close_delim = `\r\n--${boundary}--`;
+            
+            const multipartRequestBody =
+                delimiter +
+                'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+                JSON.stringify(metadata) +
+                delimiter +
+                'Content-Type: text/plain\r\n\r\n' +
+                content +
+                close_delim;
+
+            await gapi.client.request({
+              path: '/upload/drive/v3/files',
+              method: 'POST',
+              params: { uploadType: 'multipart' },
+              headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+              body: multipartRequestBody
+            });
+            logConsoleEvent("SYSTEM", `File '${name}' created successfully in Real Drive.`, "success");
+          }
+
+          document.getElementById('manual-file-name').value = "";
+          document.getElementById('manual-file-content').value = "";
+          syncGDriveUI();
+          triggerVisualPulse('User', 'GDrive');
+        } catch (err) {
+          console.error("GDrive write error:", err);
+          showToast("Failed to write to your live Google Drive.", "alert-triangle", "error");
+        }
+      }
+    }
+
+    // Visual Inspection of stored GDrive File Contents
+    async function inspectDriveFile(key, isRealId) {
+      document.getElementById('inspect-file-name').textContent = key;
+      const contentEl = document.getElementById('inspect-file-content');
+      const metaEl = document.getElementById('inspect-file-meta');
+
+      if (!isRealId) {
+        const file = mockGDriveFiles.find(f => f.name === key);
+        if (file) {
+          contentEl.textContent = file.content;
+          metaEl.textContent = `Type: Text File • Mock Size: ${file.size}`;
+        }
+      } else {
+        if (!realGDriveAuthed) return;
+        contentEl.textContent = "Loading file payload from real Google Drive servers...";
+        try {
+          const metadataResponse = await gapi.client.drive.files.get({
+            fileId: key,
+            fields: 'name, size'
+          });
+          const fileMetadata = metadataResponse.result;
+          document.getElementById('inspect-file-name').textContent = fileMetadata.name;
+
+          const response = await gapi.client.drive.files.get({
+            fileId: key,
+            alt: 'media'
+          });
+          contentEl.textContent = response.body;
+          metaEl.textContent = `Google Drive Real Sync • Size: ${(fileMetadata.size / 1024).toFixed(2)} KB`;
+        } catch (err) {
+          console.error("Failed to read files from GDrive server:", err);
+          contentEl.textContent = "Error downloading files from Drive.";
+        }
+      }
+      document.getElementById('file-inspect-modal').classList.remove('hidden');
+    }
+
+    function closeFileInspectModal() {
+      document.getElementById('file-inspect-modal').classList.add('hidden');
+    }
+
+    async function deleteDriveFile(key, isRealId, event) {
+      if (event) event.stopPropagation(); // Stop parent row inspection triggering
+      
+      if (!isRealId) {
+        mockGDriveFiles = mockGDriveFiles.filter(f => f.name !== key);
+        showToast(`Sandbox file [${key}] deleted.`, "trash-2", "amber");
+        syncGDriveUI();
+      } else {
+        if (!realGDriveAuthed) return;
+        try {
+          logConsoleEvent("SYSTEM", `Deleting file with ID [${key}] from GDrive server...`, "info");
+          await gapi.client.drive.files.delete({
+            fileId: key
+          });
+          showToast("File deleted from real Google Drive folder.", "trash-2", "success");
+          syncGDriveUI();
+        } catch (err) {
+          console.error("GDrive delete files error:", err);
+          showToast("Failed to delete GDrive file.", "alert-triangle", "error");
+        }
+      }
+    }
+
+    // Dynamic Visual Node Positioning helper (creates nice symmetrical layout)
+    function calculateNodePositions() {
+      const keys = Object.keys(agents);
+      const total = keys.length;
+      
+      keys.forEach((key, idx) => {
+        // Symmetrical topology circle clustering below the structural master nodes
+        const angle = (idx / total) * Math.PI + Math.PI / 8; // Arc layout below
+        const radius = 25; // percent radius from graph center
+        positions[key] = {
+          x: 50 + radius * Math.cos(angle) * 1.5,
+          y: 60 + radius * Math.sin(angle)
+        };
+      });
+    }
+
+    // Dynamic Schedulers
+    function startGlobalScheduler() {
+      if (clockIntervalId) clearInterval(clockIntervalId);
+      clockIntervalId = setInterval(tickScheduler, 1000);
+      isTicking = true;
+      updateSchedulerUI();
+    }
+
+    function toggleScheduler() {
+      const icon = document.getElementById('scheduler-toggle-icon');
+      if (isTicking) {
+        clearInterval(clockIntervalId);
+        clockIntervalId = null;
+        isTicking = false;
+        showToast("AgentOS global clock ticks paused.", "pause", "amber");
+      } else {
+        startGlobalScheduler();
+        showToast("AgentOS global clock resumed ticking.", "play");
+      }
+      updateSchedulerUI();
+    }
+
+    function updateSchedulerUI() {
+      const pulse = document.getElementById('scheduler-pulse');
+      const status = document.getElementById('scheduler-status');
+      const label = document.getElementById('scheduler-text');
+      const toggleIcon = document.getElementById('scheduler-toggle-icon');
+
+      if (isTicking) {
+        pulse.className = "absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-pulse";
+        status.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500";
+        label.textContent = "OS Ticking (1s)";
+        toggleIcon.setAttribute('data-lucide', 'pause');
+      } else {
+        pulse.className = "hidden";
+        status.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500";
+        label.textContent = "OS Paused";
+        toggleIcon.setAttribute('data-lucide', 'play');
+      }
+      lucide.createIcons();
+    }
+
+    // Core Scheduler Tick Logic (Handles task countdowns and queues triggers)
+    let processingTask = false;
+    async function tickScheduler() {
+      // Clean up past / deleted items inside queue
+      rebuildQueueUI();
+
+      if (processingTask || taskQueue.length === 0) return;
+
+      // Find first runnable task (immediate or scheduled loops whose clock triggered)
+      const now = Date.now();
+      const runnableIndex = taskQueue.findIndex(t => t.status === 'pending' && t.scheduledTime <= now);
+      
+      if (runnableIndex === -1) return;
+
+      const task = taskQueue[runnableIndex];
+      task.status = 'processing';
+      processingTask = true;
+      rebuildQueueUI();
+
+      try {
+        await executeTaskNode(task);
+      } catch (err) {
+        console.error("Task Engine error:", err);
+        logConsoleEvent("SYSTEM", `Task failure on execution pipeline: ${err.message}`, "error");
+      } finally {
+        // Handle recurrence / iteration loop parameters
+        if (task.type === 'loop' && task.currentIteration < task.maxIterations && !task.aborted) {
+          task.currentIteration++;
+          task.status = 'pending';
+          task.scheduledTime = Date.now() + (task.intervalSec * 1000);
+          logConsoleEvent("SYSTEM", `Re-scheduling loop task iteration ${task.currentIteration}/${task.maxIterations} to target agent '${task.toAgent}' in ${task.intervalSec}s`, "info");
+        } else {
+          // Task completes completely
+          taskQueue.splice(taskQueue.indexOf(task), 1);
+          completedTasksCount++;
+          document.getElementById('metric-steps').innerHTML = `<i data-lucide="hash" class="w-3.5 h-3.5 text-brand-400"></i> Steps Completed: ${completedTasksCount}`;
+          lucide.createIcons();
+        }
+        processingTask = false;
+        rebuildQueueUI();
+      }
+    }
+
+    // Direct Asynchronous Gemini Agent Runner
+    async function executeTaskNode(task) {
+      const targetAgent = agents[task.toAgent];
+      if (!targetAgent) {
+        throw new Error(`Target agent '${task.toAgent}' does not exist inside Directory registry.`);
+      }
+
+      logConsoleEvent("SYSTEM", `Activating execution block on Agent [${task.toAgent}]...`, "info");
+      
+      // Update Graph visualization to focus on connection lines
+      triggerVisualPulse(task.fromAgent, task.toAgent);
+
+      // Setup Gemini agent instructions dynamically incorporating workspace state metadata
+      const activeAgentNames = Object.keys(agents).join(', ');
+      
+      // Read current names of files inside active drive workspace to provide context to agents
+      let availableDriveFilesText = "";
+      if (gDriveMode === 'sandbox') {
+        availableDriveFilesText = mockGDriveFiles.map(f => `"${f.name}"`).join(', ') || "No files current";
+      } else {
+        if (realGDriveAuthed && workspaceFolderId) {
+          try {
+            const listRes = await gapi.client.drive.files.list({
+              q: `'${workspaceFolderId}' in parents and trashed = false`,
+              fields: 'files(name)'
+            });
+            availableDriveFilesText = listRes.result.files.map(f => `"${f.name}"`).join(', ') || "No files current";
+          } catch {
+            availableDriveFilesText = "Google Drive sync error";
+          }
+        } else {
+          availableDriveFilesText = "Google Drive Unauthenticated";
+        }
+      }
+
+      const systemInstructionWithOrchestrationHooks = `${targetAgent.persona}
+
+---
+CRITICAL OPERATING DIRECTIVES:
+You exist within the AgentOS runtime. You can directly command and manipulate the environment.
+If you need helper tools, you can issue commands anywhere inside your output text.
+The parser reads instructions with specific tag syntax:
+
+1. SPAWN A NEW AGENT (to help offload specialized workloads):
+[CREATE_AGENT: name="AgentName", persona="A detailed summary of its limitations and guidelines"]
+
+2. TRIGGER ANOTHER ACTIVE AGENT (and send structural context pipeline tasks):
+[TRIGGER_AGENT: name="AgentName", task="Context message and query prompt"]
+
+3. SCHEDULE A AUTOMATED RECURRING LOOP:
+[SCHEDULE_LOOP: name="AgentName", interval_sec="10", limit="3", task="Task Prompt"]
+
+4. WRITE FILE TO GOOGLE DRIVE (Saves workspace state content so other agents or humans can digest it):
+[WRITE_GDRIVE: filename="NameOfFile.txt", content="Entire textual block of content to save..."]
+
+5. READ FILE FROM GOOGLE DRIVE (Retrieves context contents and schedules execution sequence):
+[READ_GDRIVE: filename="NameOfFile.txt"]
+
+Currently active available agents in directory environment: [${activeAgentNames}]
+Currently available files inside connected Google Drive Workspace directory: [${availableDriveFilesText}]
+
+If you choose to use tools, write your commands explicitly. Keep your responses otherwise highly detailed, creative, and fully styled in markdown.`;
+
+      const payload = {
+        contents: [{ parts: [{ text: task.promptText }] }],
+        systemInstruction: { parts: [{ text: systemInstructionWithOrchestrationHooks }] },
+        generationConfig: { temperature: 0.7 }
+      };
+
+      // Call Gemini API utilizing custom exponential backoff wrapper
+      const aiResponse = await callGemini(payload);
+
+      // Commit response output to local agent memory logs
+      targetAgent.memory.unshift(`[Received Task Prompt]: ${task.promptText.substring(0, 80)}...`);
+      targetAgent.memory.unshift(`[AI Output]: ${aiResponse.substring(0, 100)}...`);
+      if (targetAgent.memory.length > 50) targetAgent.memory.pop(); // bound sizing limit
+
+      // Print output to real-time console visual
+      logConsoleEvent(task.toAgent, aiResponse, "response");
+
+      // Parse and execute special agent tool calls inside response!
+      await parseAndExecuteAgentTools(task.toAgent, aiResponse);
+    }
+
+    // Core Parser to extract tags: [CREATE_AGENT], [TRIGGER_AGENT], [SCHEDULE_LOOP], [WRITE_GDRIVE], [READ_GDRIVE]
+    async function parseAndExecuteAgentTools(sourceAgentName, text) {
+      // 1. Check for Agent Spawns: [CREATE_AGENT: name="Name", persona="..."]
+      const spawnRegex = /\[CREATE_AGENT:\s*name="([^"]+)",\s*persona="([^"]+)"\]/gi;
+      let match;
+      while ((match = spawnRegex.exec(text)) !== null) {
+        const spawnedName = match[1].trim();
+        const spawnedPersona = match[2].trim();
+
+        if (agents[spawnedName]) {
+          logConsoleEvent("SYSTEM", `Agent '${spawnedName}' already registered. Skipping dynamic spawn.`, "info");
+          continue;
+        }
+
+        // Register dynamic agent
+        const colorThemes = ["emerald", "rose", "cyan", "amber", "brand"];
+        const randomTheme = colorThemes[Math.floor(Math.random() * colorThemes.length)];
+        
+        agents[spawnedName] = {
+          id: spawnedName,
+          persona: spawnedPersona,
+          theme: randomTheme,
+          memory: [`Spawned dynamically by parent Agent: '${sourceAgentName}'`],
+          createdTime: new Date()
+        };
+
+        logConsoleEvent("SYSTEM", `🤖 Agent [${spawnedName}] successfully spawned by Agent [${sourceAgentName}]!`, "success");
+        
+        // Re-adjust node coordinates & update Graph visual
+        calculateNodePositions();
+        rebuildAgentListUI();
+        rebuildTargetSelectUI();
+        redrawVisualGraph();
+        
+        // Shoot a dynamic spawn line pulse on Graph
+        triggerVisualPulse(sourceAgentName, spawnedName);
+      }
+
+      // 2. Check for Agent Triggers: [TRIGGER_AGENT: name="Name", task="..."]
+      const triggerRegex = /\[TRIGGER_AGENT:\s*name="([^"]+)",\s*task="([^"]+)"\]/gi;
+      while ((match = triggerRegex.exec(text)) !== null) {
+        const targetName = match[1].trim();
+        const taskContent = match[2].trim();
+
+        if (!agents[targetName]) {
+          logConsoleEvent("SYSTEM", `Cannot trigger '${targetName}': Agent does not exist. Spawning standard clone...`, "info");
+          // Fallback spawn
+          agents[targetName] = {
+            id: targetName,
+            persona: `You are a helper clone agent named ${targetName}. Deliver logical structured feedback.`,
+            theme: "brand",
+            memory: [`Auto-spawned via fallback trigger link.`],
+            createdTime: new Date()
+          };
+          calculateNodePositions();
+          rebuildAgentListUI();
+          rebuildTargetSelectUI();
+          redrawVisualGraph();
+        }
+
+        // Add task to scheduler immediately (Once style execution)
+        taskQueue.push({
+          id: crypto.randomUUID(),
+          fromAgent: sourceAgentName,
+          toAgent: targetName,
+          type: 'once',
+          promptText: taskContent,
+          scheduledTime: Date.now(),
+          status: 'pending'
+        });
+
+        logConsoleEvent("SYSTEM", `⚡ Agent [${sourceAgentName}] triggered task dispatch to Agent [${targetName}]!`, "success");
+        rebuildQueueUI();
+      }
+
+      // 3. Check for Loops: [SCHEDULE_LOOP: name="Name", interval_sec="X", limit="Y", task="..."]
+      const loopRegex = /\[SCHEDULE_LOOP:\s*name="([^"]+)",\s*interval_sec="([^"]+)",\s*limit="([^"]+)",\s*task="([^"]+)"\]/gi;
+      while ((match = loopRegex.exec(text)) !== null) {
+        const targetName = match[1].trim();
+        const intervalSec = parseInt(match[2].trim()) || 10;
+        const limit = parseInt(match[3].trim()) || 3;
+        const taskContent = match[4].trim();
+
+        if (!agents[targetName]) {
+          logConsoleEvent("SYSTEM", `Loop target '${targetName}' missing. Loop scheduling skipped.`, "info");
+          continue;
+        }
+
+        taskQueue.push({
+          id: crypto.randomUUID(),
+          fromAgent: sourceAgentName,
+          toAgent: targetName,
+          type: 'loop',
+          promptText: taskContent,
+          scheduledTime: Date.now() + (intervalSec * 1000),
+          status: 'pending',
+          intervalSec: intervalSec,
+          currentIteration: 1,
+          maxIterations: limit
+        });
+
+        logConsoleEvent("SYSTEM", `🔁 Agent [${sourceAgentName}] scheduled recurring task loops on Agent [${targetName}] every ${intervalSec} seconds!`, "success");
+        rebuildQueueUI();
+      }
+
+      // 4. Check for Google Drive writes: [WRITE_GDRIVE: filename="name.txt", content="..."]
+      const writeRegex = /\[WRITE_GDRIVE:\s*filename="([^"]+)",\s*content="([\s\S]+?)"\]/gi;
+      while ((match = writeRegex.exec(text)) !== null) {
+        const targetFilename = match[1].trim();
+        const contentToWrite = match[2].trim();
+
+        if (gDriveMode === 'sandbox') {
+          // Mock Sandbox Write
+          const existingIdx = mockGDriveFiles.findIndex(f => f.name === targetFilename);
+          if (existingIdx !== -1) {
+            mockGDriveFiles[existingIdx].content = contentToWrite;
+            mockGDriveFiles[existingIdx].size = `${contentToWrite.length} B`;
+            mockGDriveFiles[existingIdx].updated = "Just now";
+          } else {
+            mockGDriveFiles.push({
+              name: targetFilename,
+              size: `${contentToWrite.length} B`,
+              content: contentToWrite,
+              updated: "Just now"
+            });
+          }
+          logConsoleEvent("SYSTEM", `📂 File [${targetFilename}] autonomously written to Sandbox GDrive folder by Agent [${sourceAgentName}]!`, "success");
+          syncGDriveUI();
+          triggerVisualPulse(sourceAgentName, 'GDrive');
+        } else {
+          // Real GDrive write inside background GAPI environment
+          if (realGDriveAuthed && workspaceFolderId) {
+            try {
+              // Lookup and write via official multi-part post methods
+              const search = await gapi.client.drive.files.list({
+                q: `'${workspaceFolderId}' in parents and name = '${targetFilename}' and trashed = false`,
+                fields: 'files(id)'
+              });
+
+              const existingFiles = search.result.files;
+              if (existingFiles && existingFiles.length > 0) {
+                const fileId = existingFiles[0].id;
+                await gapi.client.request({
+                  path: `/upload/drive/v3/files/${fileId}`,
+                  method: 'PATCH',
+                  params: { uploadType: 'media' },
+                  body: contentToWrite
+                });
+              } else {
+                const metadata = {
+                  name: targetFilename,
+                  parents: [workspaceFolderId]
+                };
+                const boundary = 'foo_bar_boundary';
+                const delimiter = `\r\n--${boundary}\r\n`;
+                const close_delim = `\r\n--${boundary}--`;
+                
+                const multipartRequestBody =
+                    delimiter +
+                    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+                    JSON.stringify(metadata) +
+                    delimiter +
+                    'Content-Type: text/plain\r\n\r\n' +
+                    contentToWrite +
+                    close_delim;
+
+                await gapi.client.request({
+                  path: '/upload/drive/v3/files',
+                  method: 'POST',
+                  params: { uploadType: 'multipart' },
+                  headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+                  body: multipartRequestBody
+                });
+              }
+              logConsoleEvent("SYSTEM", `📂 File [${targetFilename}] autonomously written to real GDrive workspace by Agent [${sourceAgentName}]!`, "success");
+              syncGDriveUI();
+              triggerVisualPulse(sourceAgentName, 'GDrive');
+            } catch (err) {
+              console.error(err);
+              logConsoleEvent("SYSTEM", `❌ Autonomous Write Error: Real GDrive connection failed during API post requests.`, "error");
+            }
+          } else {
+            logConsoleEvent("SYSTEM", `❌ Autonomous Write Error: Agent tried to write to GDrive, but OAuth connection is unauthenticated.`, "error");
+          }
+        }
+      }
+
+      // 5. Check for Google Drive Reads: [READ_GDRIVE: filename="name.txt"]
+      const readRegex = /\[READ_GDRIVE:\s*filename="([^"]+)"\]/gi;
+      while ((match = readRegex.exec(text)) !== null) {
+        const targetFilename = match[1].trim();
+        
+        if (gDriveMode === 'sandbox') {
+          const file = mockGDriveFiles.find(f => f.name === targetFilename);
+          if (file) {
+            logConsoleEvent("SYSTEM", `📂 File [${targetFilename}] autonomously read from Sandbox GDrive workspace. Forwarding contents to Agent [${sourceAgentName}]...`, "success");
+            
+            // Queue follow-up execution task directly for the requesting agent, passing in file body
+            taskQueue.push({
+              id: crypto.randomUUID(),
+              fromAgent: 'GDrive',
+              toAgent: sourceAgentName,
+              type: 'once',
+              promptText: `Here is the requested contents of the Google Drive workspace file "${targetFilename}":\n\n"""\n${file.content}\n"""\n\nRead these contents, synthesize and carry out your objectives accordingly.`,
+              scheduledTime: Date.now() + 1000,
+              status: 'pending'
+            });
+            rebuildQueueUI();
+            triggerVisualPulse('GDrive', sourceAgentName);
+          } else {
+            logConsoleEvent("SYSTEM", `❌ Autonomous Read Error: File [${targetFilename}] not found in GDrive Sandbox workspace.`, "error");
+          }
+        } else {
+          // Read from Real GDrive
+          if (realGDriveAuthed && workspaceFolderId) {
+            try {
+              const search = await gapi.client.drive.files.list({
+                q: `'${workspaceFolderId}' in parents and name = '${targetFilename}' and trashed = false`,
+                fields: 'files(id)'
+              });
+
+              const existingFiles = search.result.files;
+              if (existingFiles && existingFiles.length > 0) {
+                const fileId = existingFiles[0].id;
+                const fileMedia = await gapi.client.drive.files.get({
+                  fileId: fileId,
+                  alt: 'media'
+                });
+
+                logConsoleEvent("SYSTEM", `📂 File [${targetFilename}] autonomously downloaded from GDrive. Syncing content block to Agent [${sourceAgentName}]...`, "success");
+                taskQueue.push({
+                  id: crypto.randomUUID(),
+                  fromAgent: 'GDrive',
+                  toAgent: sourceAgentName,
+                  type: 'once',
+                  promptText: `Here is the requested contents of the Google Drive workspace file "${targetFilename}":\n\n"""\n${fileMedia.body}\n"""\n\nRead these contents, synthesize and carry out your objectives accordingly.`,
+                  scheduledTime: Date.now() + 1000,
+                  status: 'pending'
+                });
+                rebuildQueueUI();
+                triggerVisualPulse('GDrive', sourceAgentName);
+              } else {
+                logConsoleEvent("SYSTEM", `❌ Autonomous Read Error: File [${targetFilename}] not found in your Real Google Drive folder.`, "error");
+              }
+            } catch (err) {
+              console.error(err);
+              logConsoleEvent("SYSTEM", `❌ Autonomous Read Error: Real GDrive connection failed during download pipeline.`, "error");
+            }
+          } else {
+            logConsoleEvent("SYSTEM", `❌ Autonomous Read Error: Agent tried to read, but OAuth workspace has not been established.`, "error");
+          }
+        }
+      }
+    }
+
+    // Direct Gemini Fetch Pipeline with Exponential Retries Wrapper
+    async function callGemini(payload) {
+      const apiKey = ""; // The execution environment supplies this key at runtime automatically.
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      const retries = 5;
+      let delay = 1000;
+
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Gemini Server Connection Error: HTTP ${response.status}`);
+          }
+          
+          const result = await response.json();
+          const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!text) {
+            throw new Error("No textual context returned from AI models.");
+          }
+          return text;
+        } catch (error) {
+          if (i === retries - 1) throw error;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          delay *= 2;
+        }
+      }
+    }
+
+    // Manual Form Trigger Submission handler
+    function enqueueNewTask() {
+      const target = document.getElementById('task-target-agent').value;
+      const type = document.getElementById('task-type').value;
+      const prompt = document.getElementById('task-prompt').value;
+
+      if (!target || !prompt.trim()) {
+        showToast("Select a valid target agent and fill in core prompt contents.", "alert-circle", "error");
+        return;
+      }
+
+      if (type === 'once') {
+        taskQueue.push({
+          id: crypto.randomUUID(),
+          fromAgent: 'User',
+          toAgent: target,
+          type: 'once',
+          promptText: prompt,
+          scheduledTime: Date.now(),
+          status: 'pending'
+        });
+        showToast(`Enqueued immediate task execution on Agent [${target}]!`, "check-circle");
+      } else {
+        const intervalSec = parseInt(document.getElementById('task-interval').value) || 10;
+        const iterations = parseInt(document.getElementById('task-iterations').value) || 3;
+
+        taskQueue.push({
+          id: crypto.randomUUID(),
+          fromAgent: 'User',
+          toAgent: target,
+          type: 'loop',
+          promptText: prompt,
+          scheduledTime: Date.now(),
+          status: 'pending',
+          intervalSec: intervalSec,
+          currentIteration: 1,
+          maxIterations: iterations
+        });
+        showToast(`Scheduled a repeating loop task on Agent [${target}] for ${iterations} runs!`, "repeat");
+      }
+
+      rebuildQueueUI();
+      document.getElementById('task-prompt').value = ""; // Clear out input area
+    }
+
+    // Quick creation form manual entry submit
+    function registerAgentFromUI() {
+      const name = document.getElementById('new-agent-name').value.trim();
+      const persona = document.getElementById('new-agent-persona').value.trim();
+      const theme = document.getElementById('new-agent-theme').value;
+
+      if (!name || !persona) {
+        showToast("Provide both Name and System Instructions.", "alert-circle", "error");
+        return;
+      }
+
+      // Check unique constraints
+      const cleanName = name.replace(/[^a-zA-Z0-9]/g, ""); // Keep alphanumeric
+      if (agents[cleanName]) {
+        showToast("An agent with that unique identifier name already exists.", "alert-triangle", "error");
+        return;
+      }
+
+      agents[cleanName] = {
+        id: cleanName,
+        persona: persona,
+        theme: theme,
+        memory: ["Manually registered and spawned by User workspace command."],
+        createdTime: new Date()
+      };
+
+      // Recalculate graph visuals
+      calculateNodePositions();
+      rebuildAgentListUI();
+      rebuildTargetSelectUI();
+      redrawVisualGraph();
+
+      // UI clean up
+      document.getElementById('new-agent-name').value = "";
+      document.getElementById('new-agent-persona').value = "";
+      
+      showToast(`Agent [${cleanName}] successfully compiled and spawned!`, "user-plus");
+    }
+
+    // Toggle Scheduled Loop Options Box inside triggering form
+    function toggleTaskScheduling() {
+      const type = document.getElementById('task-type').value;
+      const opts = document.getElementById('scheduling-options');
+      if (type === 'loop') {
+        opts.classList.remove('hidden');
+      } else {
+        opts.classList.add('hidden');
+      }
+    }
+
+    // UI Redraw: Active Directories
+    function rebuildAgentListUI() {
+      const container = document.getElementById('agent-directory-list');
+      container.innerHTML = '';
+      
+      const countLabel = document.getElementById('directory-count');
+      const keys = Object.keys(agents);
+      countLabel.textContent = `${keys.length} Active`;
+
+      keys.forEach(key => {
+        const agent = agents[key];
+        const item = document.createElement('div');
+        
+        let colorClasses = "border-violet-500/30 bg-violet-950/10 text-violet-300";
+        let hoverBtn = "hover:bg-violet-500/20";
+        if (agent.theme === "rose") {
+          colorClasses = "border-rose-500/30 bg-rose-950/10 text-rose-300";
+          hoverBtn = "hover:bg-rose-500/20";
+        } else if (agent.theme === "emerald") {
+          colorClasses = "border-emerald-500/30 bg-emerald-950/10 text-emerald-300";
+          hoverBtn = "hover:bg-emerald-500/20";
+        } else if (agent.theme === "cyan") {
+          colorClasses = "border-cyan-500/30 bg-cyan-950/10 text-cyan-300";
+          hoverBtn = "hover:bg-cyan-500/20";
+        } else if (agent.theme === "amber") {
+          colorClasses = "border-amber-500/30 bg-amber-950/10 text-amber-300";
+          hoverBtn = "hover:bg-amber-500/20";
+        }
+
+        item.className = `flex justify-between items-center p-3 border rounded-xl ${colorClasses} gap-2`;
+        item.innerHTML = `
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+              <h3 class="font-bold text-xs truncate uppercase tracking-wider">${agent.id}</h3>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-1 truncate max-w-[210px]">${agent.persona}</p>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="inspectAgent('${agent.id}')" class="p-1 text-slate-400 hover:text-slate-200 rounded transition-all flex items-center justify-center ${hoverBtn}" title="Inspect Memory Database">
+              <i data-lucide="database" class="w-3.5 h-3.5"></i>
+            </button>
+            <button onclick="deregisterAgent('${agent.id}')" class="p-1 text-slate-500 hover:text-rose-400 rounded transition-all flex items-center justify-center hover:bg-rose-500/10" title="Retire Agent">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+      lucide.createIcons();
+    }
+
+    // UI Redraw: Options inside Core trigger forms
+    function rebuildTargetSelectUI() {
+      const select = document.getElementById('task-target-agent');
+      select.innerHTML = '';
+      Object.keys(agents).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+    }
+
+    // UI Redraw: Active Queued/Loop tasks
+    function rebuildQueueUI() {
+      const container = document.getElementById('task-queue-list');
+      container.innerHTML = '';
+      
+      const badge = document.getElementById('queue-badge');
+      badge.textContent = `${taskQueue.length} pending`;
+
+      if (taskQueue.length === 0) {
+        container.innerHTML = `
+          <div id="queue-empty-state" class="text-center py-6 text-slate-500 text-xs italic">
+            No active schedules or pending tasks in queue
+          </div>
+        `;
+        return;
+      }
+
+      taskQueue.forEach(task => {
+        const div = document.createElement('div');
+        const remainsSec = Math.max(0, Math.round((task.scheduledTime - Date.now()) / 1000));
+        
+        let statusTag = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-950 text-slate-400 border border-slate-800">In ${remainsSec}s</span>`;
+        if (task.status === 'processing') {
+          statusTag = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">Running</span>`;
+        }
+
+        let loopTag = '';
+        if (task.type === 'loop') {
+          loopTag = `<span class="text-[9px] px-1.5 py-0.5 bg-brand-500/15 border border-brand-500/20 text-brand-400 rounded-full font-bold">Iter ${task.currentIteration}/${task.maxIterations}</span>`;
+        }
+
+        div.className = "p-2.5 bg-slate-950/60 border border-slate-900 rounded-xl flex items-center justify-between gap-2.5";
+        div.innerHTML = `
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-[10px] font-bold text-slate-300 font-mono">${task.fromAgent} <i data-lucide="arrow-right" class="w-3 h-3 inline"></i> ${task.toAgent}</span>
+              ${statusTag}
+              ${loopTag}
+            </div>
+            <p class="text-[10px] text-slate-500 truncate mt-1 italic">${task.promptText}</p>
+          </div>
+          <div>
+            <button onclick="cancelTask('${task.id}')" class="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 transition-colors" title="Abort Loop">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+      lucide.createIcons();
+    }
+
+    function cancelTask(taskId) {
+      const task = taskQueue.find(t => t.id === taskId);
+      if (task) {
+        task.aborted = true;
+        // Strip immediately from queue index
+        taskQueue = taskQueue.filter(t => t.id !== taskId);
+        showToast("Task loop aborted and deleted successfully.", "alert-circle", "amber");
+        rebuildQueueUI();
+      }
+    }
+
+    function deregisterAgent(agentId) {
+      if (isRunningTask()) {
+        showToast("Cannot retire agents while the task scheduler is actively computing.", "alert-triangle", "error");
+        return;
+      }
+      
+      delete agents[agentId];
+      // Strip any orphaned queued tasks assigned to deleted agents
+      taskQueue = taskQueue.filter(t => t.toAgent !== agentId);
+
+      calculateNodePositions();
+      rebuildAgentListUI();
+      rebuildTargetSelectUI();
+      redrawVisualGraph();
+      
+      showToast(`Agent [${agentId}] retired and stripped from directory logs.`, "trash-2", "amber");
+    }
+
+    // Modal Inspection Panels
+    function inspectAgent(agentId) {
+      const agent = agents[agentId];
+      if (!agent) return;
+
+      document.getElementById('modal-agent-name').textContent = agent.id;
+      document.getElementById('modal-agent-persona').textContent = agent.persona;
+
+      const memoryContainer = document.getElementById('modal-agent-memory');
+      memoryContainer.innerHTML = '';
+
+      if (agent.memory.length === 0) {
+        memoryContainer.innerHTML = `<div class="text-slate-500 italic">Ephemeris logs are currently empty. Execute loops to gather history.</div>`;
+      } else {
+        agent.memory.forEach(log => {
+          const p = document.createElement('p');
+          p.className = "border-b border-slate-900 pb-1.5 last:border-0";
+          p.textContent = log;
+          memoryContainer.appendChild(p);
+        });
+      }
+
+      document.getElementById('agent-inspect-modal').classList.remove('hidden');
+    }
+
+    function closeInspectModal() {
+      document.getElementById('agent-inspect-modal').classList.add('hidden');
+    }
+
+    // real-time scrolling console logic
+    function logConsoleEvent(source, text, type = "info") {
+      const feed = document.getElementById('console-feed');
+      
+      // Clear out standard startup instruction prompt text on first real input
+      if (feed.querySelector('.italic')) {
+        feed.innerHTML = '';
+      }
+
+      const block = document.createElement('div');
+      
+      let headerBg = "bg-slate-900 border-slate-800 text-slate-300";
+      let textStyles = "text-slate-400";
+      if (type === "error") {
+        headerBg = "bg-rose-950/30 border-rose-900/40 text-rose-400";
+        textStyles = "text-rose-300/80 font-semibold";
+      } else if (type === "success") {
+        headerBg = "bg-emerald-950/30 border-emerald-900/40 text-emerald-400";
+        textStyles = "text-emerald-300/80";
+      } else if (type === "response") {
+        // Find agent configuration to dynamically style
+        const agent = agents[source];
+        let tagColor = "text-violet-400";
+        let cardBg = "bg-violet-950/10 border-violet-900/30";
+        if (agent && agent.theme === "rose") {
+          tagColor = "text-rose-400";
+          cardBg = "bg-rose-950/10 border-rose-900/30";
+        } else if (agent && agent.theme === "emerald") {
+          tagColor = "text-emerald-400";
+          cardBg = "bg-emerald-950/10 border-emerald-900/30";
+        } else if (agent && agent.theme === "cyan") {
+          tagColor = "text-cyan-400";
+          cardBg = "bg-cyan-950/10 border-cyan-900/30";
+        } else if (agent && agent.theme === "amber") {
+          tagColor = "text-amber-400";
+          cardBg = "bg-amber-950/10 border-amber-900/30";
+        }
+        
+        headerBg = `${cardBg} ${tagColor}`;
+        textStyles = "text-slate-200 bg-slate-950/50 p-3 rounded-lg border border-slate-900/60 leading-relaxed max-h-[300px] overflow-y-auto whitespace-pre-wrap";
+      }
+
+      block.className = `border rounded-xl overflow-hidden shadow-sm flex flex-col gap-2 p-3 ${headerBg}`;
+      
+      if (type === "response") {
+        block.innerHTML = `
+          <div class="flex justify-between items-center font-bold text-[10px] uppercase tracking-wider">
+            <span>🤖 Response Output From: [${source}]</span>
+            <span>${new Date().toLocaleTimeString()}</span>
+          </div>
+          <div class="${textStyles}">${escapeHtml(text)}</div>
+        `;
+      } else {
+        block.innerHTML = `
+          <div class="flex justify-between items-center font-bold text-[10px] uppercase tracking-wider">
+            <span>🔧 SYSTEM EVENT</span>
+            <span>${new Date().toLocaleTimeString()}</span>
+          </div>
+          <p class="text-xs ${textStyles}">${escapeHtml(text)}</p>
+        `;
+      }
+
+      feed.appendChild(block);
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    function clearConsole() {
+      document.getElementById('console-feed').innerHTML = `
+        <div class="text-slate-500 italic text-center py-12">
+          Console cleared. Execute actions to trigger events.
+        </div>
+      `;
+    }
+
+    // Dynamic Visual SVG Network graph engine
+    function redrawVisualGraph() {
+      const svg = document.getElementById('network-svg');
+      const nodesContainer = document.getElementById('network-nodes-container');
+      
+      // Keep clear
+      svg.innerHTML = '';
+      nodesContainer.innerHTML = '';
+
+      // Draw User controller node manually at visual top
+      const userNode = document.createElement('div');
+      userNode.className = "absolute w-12 h-12 bg-slate-900 border border-emerald-500/50 rounded-full flex flex-col items-center justify-center text-[10px] font-bold text-emerald-400 shadow-lg pointer-events-auto cursor-pointer hover:scale-105 transition-transform";
+      userNode.style.left = `calc(${positions['User'].x}% - 24px)`;
+      userNode.style.top = `calc(${positions['User'].y}% - 24px)`;
+      userNode.innerHTML = `
+        <i data-lucide="user" class="w-4 h-4"></i>
+        <span>User</span>
+      `;
+      nodesContainer.appendChild(userNode);
+
+      // Draw Google Drive system folder node on map top right
+      const driveNode = document.createElement('div');
+      driveNode.className = "absolute w-14 h-14 bg-slate-900 border border-amber-500/50 rounded-full flex flex-col items-center justify-center text-[9px] font-bold text-amber-400 shadow-lg pointer-events-auto cursor-pointer hover:scale-105 transition-all";
+      driveNode.style.left = `calc(${positions['GDrive'].x}% - 28px)`;
+      driveNode.style.top = `calc(${positions['GDrive'].y}% - 28px)`;
+      driveNode.innerHTML = `
+        <i data-lucide="cloud" class="w-4.5 h-4.5 animate-bounce"></i>
+        <span>GDrive</span>
+      `;
+      // Let user jump straight to explorer tab when clicking visual Cloud node!
+      driveNode.onclick = () => {
+        switchLeftTab('gdrive');
+        showToast("Switched tab focus to Google Drive Directory Viewer.");
+      };
+      nodesContainer.appendChild(driveNode);
+
+      // Render agent nodes
+      Object.keys(agents).forEach(name => {
+        const agent = agents[name];
+        const pos = positions[name];
+        if (!pos) return;
+
+        let themeColor = "border-violet-500 bg-violet-950 text-violet-300 shadow-violet-500/10";
+        if (agent.theme === "rose") themeColor = "border-rose-500 bg-rose-950 text-rose-300 shadow-rose-500/10";
+        else if (agent.theme === "emerald") themeColor = "border-emerald-500 bg-emerald-950 text-emerald-300 shadow-emerald-500/10";
+        else if (agent.theme === "cyan") themeColor = "border-cyan-500 bg-cyan-950 text-cyan-300 shadow-cyan-500/10";
+        else if (agent.theme === "amber") themeColor = "border-amber-500 bg-amber-950 text-amber-300 shadow-amber-500/10";
+
+        const node = document.createElement('div');
+        node.id = `node-${name}`;
+        node.className = `absolute w-14 h-14 border rounded-full flex flex-col items-center justify-center text-[10px] font-bold shadow-lg pointer-events-auto cursor-pointer hover:scale-110 transition-transform ${themeColor}`;
+        node.style.left = `calc(${pos.x}% - 28px)`;
+        node.style.top = `calc(${pos.y}% - 28px)`;
+        node.innerHTML = `
+          <i data-lucide="bot" class="w-4 h-4 mb-0.5"></i>
+          <span class="truncate max-w-[50px] uppercase text-[9px] tracking-wider">${name}</span>
+        `;
+        
+        // Let users inspect directly by clicking floating graph node elements!
+        node.onclick = () => inspectAgent(name);
+
+        nodesContainer.appendChild(node);
+      });
+
+      // Draw baseline static connections from User to active agents
+      Object.keys(agents).forEach(name => {
+        const pos = positions[name];
+        if (!pos) return;
+        const line = createSvgLine(positions['User'].x, positions['User'].y, pos.x, pos.y, `line-User-${name}`, "stroke-slate-800/40");
+        svg.appendChild(line);
+      });
+
+      // Draw connections from GDrive to active agents (observing storage loops)
+      Object.keys(agents).forEach(name => {
+        const pos = positions[name];
+        if (!pos) return;
+        const line = createSvgLine(positions['GDrive'].x, positions['GDrive'].y, pos.x, pos.y, `line-GDrive-${name}`, "stroke-amber-950/20");
+        svg.appendChild(line);
+      });
+
+      // Draw baseline interconnected maps between agents
+      const keys = Object.keys(agents);
+      for (let i = 0; i < keys.length; i++) {
+        for (let j = i + 1; j < keys.length; j++) {
+          const fromName = keys[i];
+          const toName = keys[j];
+          const line = createSvgLine(positions[fromName].x, positions[fromName].y, positions[toName].x, positions[toName].y, `line-${fromName}-${toName}`, "stroke-slate-900/40");
+          svg.appendChild(line);
+        }
+      }
+
+      lucide.createIcons();
+    }
+
+    function createSvgLine(x1, y1, x2, y2, id, strokeClass = "stroke-slate-800") {
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", `${x1}%`);
+      line.setAttribute("y1", `${y1}%`);
+      line.setAttribute("x2", `${x2}%`);
+      line.setAttribute("y2", `${y2}%`);
+      line.setAttribute("id", id);
+      line.setAttribute("stroke-width", "2");
+      line.setAttribute("class", `${strokeClass} transition-all duration-300`);
+      return line;
+    }
+
+    // Visual Line Pulse triggers
+    function triggerVisualPulse(fromAgent, toAgent) {
+      // Find matching line identifier element regardless of coordinates order
+      let lineId = `line-${fromAgent}-${toAgent}`;
+      let line = document.getElementById(lineId);
+      if (!line) {
+        lineId = `line-${toAgent}-${fromAgent}`;
+        line = document.getElementById(lineId);
+      }
+
+      if (line) {
+        // Switch static connector to dynamic animated pulse line
+        line.setAttribute("class", "pulsing-connector stroke-emerald-500");
+        line.setAttribute("stroke-width", "3.5");
+
+        // Flash target node animation as well
+        const targetNode = document.getElementById(`node-${toAgent}`);
+        if (targetNode) {
+          targetNode.classList.add("scale-110", "ring-4", "ring-emerald-400/45");
+        }
+
+        setTimeout(() => {
+          if (line) {
+            line.setAttribute("class", "stroke-slate-900/40");
+            line.setAttribute("stroke-width", "2");
+          }
+          if (targetNode) {
+            targetNode.classList.remove("scale-110", "ring-4", "ring-emerald-400/45");
+          }
+        }, 3000);
+      }
+    }
+
+    // General Utility Methods
+    function isRunningTask() {
+      return taskQueue.some(t => t.status === 'processing');
+    }
+
+    // HTML escape utility
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function showToast(message, iconName = "info", type = "brand") {
+      if (toastTimeoutId) clearTimeout(toastTimeoutId);
+      
+      const toast = document.getElementById('custom-toast');
+      const textEl = document.getElementById('toast-message');
+      const iconEl = document.getElementById('toast-icon');
+      
+      textEl.textContent = message;
+      iconEl.setAttribute('data-lucide', iconName);
+      
+      if (type === "error") {
+        toast.className = "fixed bottom-4 right-4 z-[99] transform translate-y-0 opacity-100 transition-all duration-300 bg-slate-950 border border-slate-900 border-l-4 border-rose-500 px-4 py-3 rounded-r-xl shadow-2xl flex justify-between items-center gap-3";
+        iconEl.className = "w-5 h-5 text-rose-500";
+      } else if (type === "amber") {
+        toast.className = "fixed bottom-4 right-4 z-[99] transform translate-y-0 opacity-100 transition-all duration-300 bg-slate-950 border border-slate-900 border-l-4 border-amber-500 px-4 py-3 rounded-r-xl shadow-2xl flex justify-between items-center gap-3";
+        iconEl.className = "w-5 h-5 text-amber-500";
+      } else {
+        toast.className = "fixed bottom-4 right-4 z-[99] transform translate-y-0 opacity-100 transition-all duration-300 bg-slate-950 border border-slate-900 border-l-4 border-brand-500 px-4 py-3 rounded-r-xl shadow-2xl flex justify-between items-center gap-3";
+        iconEl.className = "w-5 h-5 text-brand-400";
+      }
+      
+      lucide.createIcons();
+      toast.classList.remove('hidden');
+
+      toastTimeoutId = setTimeout(dismissToast, 4000);
+    }
+
+    function dismissToast() {
+      const toast = document.getElementById('custom-toast');
+      toast.classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
