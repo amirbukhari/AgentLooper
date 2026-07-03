@@ -103,10 +103,9 @@
         </span>
         <span id="scheduler-text" class="text-xs font-bold text-slate-300">OS Ticking (1s)</span>
       </div>
-      <span class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 rounded-xl border border-slate-800 flex items-center gap-1.5">
-        <i data-lucide="zap" class="w-3.5 h-3.5 text-yellow-500"></i>
-        Gemini 2.5 Flash
-      </span>
+      <div id="google-account-badge" class="flex items-center gap-2">
+        <!-- Populated dynamically by updateGoogleAuthUI() -->
+      </div>
     </div>
   </header>
 
@@ -208,43 +207,47 @@
 
       <!-- Left Tab Container 2: GDrive Workspace Panel -->
       <div id="tab-panel-gdrive" class="hidden flex flex-col gap-6">
-        <!-- Connection Configuration -->
+        <!-- Unified Google Sign-In (powers both live Drive and your own Gemini quota) -->
         <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4">
           <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
             <div class="flex items-center gap-2">
-              <i data-lucide="cloud-lightning" class="text-amber-400 w-5 h-5"></i>
-              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">GDrive Connection</h2>
+              <i data-lucide="shield-check" class="text-amber-400 w-5 h-5"></i>
+              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">Google Account</h2>
             </div>
-            <span id="gdrive-status-label" class="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold">Simulated/Sandbox</span>
+            <span id="google-signin-status-label" class="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold">Not Connected</span>
           </div>
 
-          <div class="flex flex-col gap-3">
+          <div id="google-signin-form" class="flex flex-col gap-3">
+            <p class="text-[11px] text-slate-400 italic leading-relaxed">One Google sign-in powers both your live Google Drive and your own Gemini API usage (billed to your Google Cloud project, no shared/pasted API key needed).</p>
             <div>
-              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Connector Engine Mode</label>
-              <div class="grid grid-cols-2 gap-2">
-                <button onclick="setGDriveMode('sandbox')" id="btn-gdrive-sandbox" class="py-1.5 rounded-lg text-xs font-bold transition-all border border-brand-500 bg-brand-500/10 text-brand-300">
-                  Sandbox
-                </button>
-                <button onclick="setGDriveMode('real')" id="btn-gdrive-real" class="py-1.5 rounded-lg text-xs font-bold transition-all border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200">
-                  Real OAuth2
-                </button>
-              </div>
+              <label class="block text-[9px] font-semibold text-slate-500 uppercase">OAuth Client ID</label>
+              <input type="text" id="google-client-id" placeholder="your-client-id.apps.googleusercontent.com" class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300">
             </div>
+            <div>
+              <label class="block text-[9px] font-semibold text-slate-500 uppercase">Google Cloud Project ID <span class="normal-case text-slate-600">(optional, improves quota routing)</span></label>
+              <input type="text" id="google-project-id" placeholder="my-gcp-project-id" class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300">
+            </div>
+            <button onclick="signInWithGoogle()" class="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold py-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5">
+              <i data-lucide="log-in" class="w-3.5 h-3.5"></i> Sign in with Google
+            </button>
+            <p class="text-[10px] text-slate-500 leading-relaxed">
+              One-time setup: create an OAuth Client ID in
+              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" class="text-brand-400 underline">Google Cloud Console</a>
+              (Web application, add this page's URL as an Authorized JavaScript origin), then enable the
+              <a href="https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com" target="_blank" rel="noopener" class="text-brand-400 underline">Generative Language API</a>
+              and
+              <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener" class="text-brand-400 underline">Google Drive API</a>
+              on that same project.
+            </p>
+          </div>
 
-            <!-- Credentials Box (Only visible for real integration) -->
-            <div id="gdrive-credentials-form" class="hidden flex flex-col gap-2 bg-slate-950 p-3 rounded-xl border border-slate-900">
-              <p class="text-[10px] text-slate-400 italic mb-1 leading-relaxed">Enter your credentials to link your physical Google Drive. Permissions read/write inside an <b>AgentOS Workspace</b> folder.</p>
-              <div>
-                <label class="block text-[9px] font-semibold text-slate-500 uppercase">OAuth Client ID</label>
-                <input type="text" id="gdrive-client-id" placeholder="your-client-id.apps.googleusercontent.com" class="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300">
+          <div id="google-signed-in-panel" class="hidden flex flex-col gap-3">
+            <div class="flex items-center justify-between bg-slate-950 border border-slate-900 rounded-xl px-3 py-2.5">
+              <div class="flex items-center gap-2 min-w-0">
+                <i data-lucide="user-check" class="text-emerald-400 w-4 h-4 shrink-0"></i>
+                <span id="google-account-email" class="text-xs font-semibold text-slate-200 truncate">Connected</span>
               </div>
-              <div>
-                <label class="block text-[9px] font-semibold text-slate-500 uppercase">Google API Key</label>
-                <input type="password" id="gdrive-api-key" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-slate-300">
-              </div>
-              <button onclick="authenticateRealGoogleDrive()" class="mt-2 w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-1.5 rounded text-xs transition-all flex items-center justify-center gap-1">
-                <i data-lucide="key" class="w-3.5 h-3.5"></i> Establish Auth Connection
-              </button>
+              <button onclick="signOutGoogle()" class="text-[10px] text-slate-500 hover:text-rose-400 font-semibold shrink-0">Sign Out</button>
             </div>
           </div>
         </div>
@@ -513,8 +516,16 @@
     let gDriveMode = 'sandbox'; // 'sandbox' | 'real'
     let realGDriveInited = false;
     let realGDriveAuthed = false;
-    let tokenClient = null;
     let workspaceFolderId = null;
+
+    // Unified Google Sign-In (Drive + Gemini) state
+    let googleAuth = {
+      clientId: '',
+      projectId: '',
+      accessToken: null,
+      email: null,
+      tokenClient: null
+    };
 
     // Global ticking engine config (1-second clock loop)
     let isTicking = true;
@@ -576,6 +587,9 @@
       
       // Render initial workspace dropdown
       rebuildWorkspaceDropdown();
+
+      // Restore Google sign-in (Drive + Gemini) if a live session token exists
+      restoreGoogleSession();
 
       // Fire up the Orchestration Clock Tick
       startGlobalScheduler();
@@ -871,82 +885,160 @@ Your output must be purely JSON, matching this schema:
       }
     }
 
-    // Toggle real vs sandbox GDrive modes
-    function setGDriveMode(mode) {
-      gDriveMode = mode;
-      const btnSandbox = document.getElementById('btn-gdrive-sandbox');
-      const btnReal = document.getElementById('btn-gdrive-real');
-      const credsForm = document.getElementById('gdrive-credentials-form');
-      const statusLabel = document.getElementById('gdrive-status-label');
-      const driveBadge = document.getElementById('gdrive-badge');
-
-      if (mode === 'sandbox') {
-        btnSandbox.className = "py-1.5 rounded-lg text-xs font-bold transition-all border border-brand-500 bg-brand-500/10 text-brand-300";
-        btnReal.className = "py-1.5 rounded-lg text-xs font-bold transition-all border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200";
-        credsForm.classList.add('hidden');
-        statusLabel.textContent = "Simulated/Sandbox";
-        statusLabel.className = "text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold";
-        driveBadge.className = "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
-        showToast("Switched GDrive Connection to Offline Sandbox.", "info");
-      } else {
-        btnReal.className = "py-1.5 rounded-lg text-xs font-bold transition-all border border-brand-500 bg-brand-500/10 text-brand-300";
-        btnSandbox.className = "py-1.5 rounded-lg text-xs font-bold transition-all border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200";
-        credsForm.classList.remove('hidden');
-        statusLabel.textContent = realGDriveAuthed ? "Connected Real" : "Pending Auth";
-        statusLabel.className = realGDriveAuthed 
-          ? "text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-full font-bold"
-          : "text-[10px] px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/25 rounded-full font-bold";
-        driveBadge.className = realGDriveAuthed ? "w-2 h-2 rounded-full bg-emerald-400 animate-pulse" : "w-2 h-2 rounded-full bg-rose-400 animate-pulse";
-        showToast("Switched mode. Please fill credentials & complete OAuth initialization.", "cloud-lightning");
-      }
-      syncGDriveUI();
+    // Prefill saved Client ID / Project ID (not the token itself) so users don't retype every visit
+    function restoreGoogleAuthFields() {
+      const savedClientId = localStorage.getItem('agentos_google_client_id') || '';
+      const savedProjectId = localStorage.getItem('agentos_google_project_id') || '';
+      document.getElementById('google-client-id').value = savedClientId;
+      document.getElementById('google-project-id').value = savedProjectId;
+      googleAuth.clientId = savedClientId;
+      googleAuth.projectId = savedProjectId;
     }
 
-    // Google API Real Client Authentication & Loader logic
-    function authenticateRealGoogleDrive() {
-      const clientId = document.getElementById('gdrive-client-id').value.trim();
-      const apiKey = document.getElementById('gdrive-api-key').value.trim();
+    // Kick off a single Google OAuth consent covering both Drive and Gemini (cloud-platform) scopes
+    function signInWithGoogle() {
+      const clientId = document.getElementById('google-client-id').value.trim();
+      const projectId = document.getElementById('google-project-id').value.trim();
 
-      if (!clientId || !apiKey) {
-        showToast("Real OAuth connection requires both a valid Client ID and API Key.", "alert-triangle", "error");
+      if (!clientId) {
+        showToast("Paste your Google OAuth Client ID first.", "alert-triangle", "error");
         return;
+      }
+
+      if (typeof google === 'undefined' || !google.accounts) {
+        showToast("Google Identity script hasn't finished loading yet. Try again in a moment.", "alert-triangle", "error");
+        return;
+      }
+
+      localStorage.setItem('agentos_google_client_id', clientId);
+      localStorage.setItem('agentos_google_project_id', projectId);
+      googleAuth.clientId = clientId;
+      googleAuth.projectId = projectId;
+
+      googleAuth.tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email',
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error) {
+            console.error("Google sign-in error:", tokenResponse);
+            showToast(`Google sign-in failed: ${tokenResponse.error}`, "alert-triangle", "error");
+            return;
+          }
+
+          googleAuth.accessToken = tokenResponse.access_token;
+          sessionStorage.setItem('agentos_google_token', JSON.stringify({
+            access_token: tokenResponse.access_token,
+            expires_at: Date.now() + (Number(tokenResponse.expires_in || 3600) * 1000)
+          }));
+
+          await finalizeGoogleSignIn();
+        },
+      });
+
+      googleAuth.tokenClient.requestAccessToken({ prompt: 'consent' });
+    }
+
+    // Fetch profile info, wire the token into gapi for live Drive access, and refresh UI
+    async function finalizeGoogleSignIn() {
+      try {
+        const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { 'Authorization': `Bearer ${googleAuth.accessToken}` }
+        });
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          googleAuth.email = profile.email || null;
+        }
+      } catch (err) {
+        console.error("Failed to fetch Google profile info:", err);
       }
 
       gapi.load('client', async () => {
         try {
-          await gapi.client.init({
-            apiKey: apiKey,
-            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-          });
+          await gapi.client.init({ discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+          gapi.client.setToken({ access_token: googleAuth.accessToken });
           realGDriveInited = true;
-
-          // Set up Token Client (using GIS API)
-          tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: clientId,
-            scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.resource',
-            callback: async (tokenResponse) => {
-              if (tokenResponse.error !== undefined) {
-                throw tokenResponse;
-              }
-              realGDriveAuthed = true;
-              document.getElementById('gdrive-status-label').textContent = "Connected Real";
-              document.getElementById('gdrive-status-label').className = "text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-full font-bold";
-              document.getElementById('gdrive-badge').className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
-              showToast("Successfully Authenticated Real Google Drive!", "check-circle");
-              
-              // Run real initial sync workspace setup
-              await setupRealDriveWorkspaceFolder();
-            },
-          });
-
-          // Request access token
-          tokenClient.requestAccessToken({ prompt: 'consent' });
-
+          realGDriveAuthed = true;
+          gDriveMode = 'real';
+          await setupRealDriveWorkspaceFolder();
         } catch (err) {
-          console.error("GAPI Authentication error:", err);
-          showToast(`Auth Failed: ${err.message || 'Check your console logs'}`, "alert-triangle", "error");
+          console.error("GAPI init error after Google sign-in:", err);
+          showToast("Signed in, but failed to initialize the Drive client.", "alert-triangle", "error");
         }
+        updateGoogleAuthUI();
+        syncGDriveUI();
+        lucide.createIcons();
       });
+
+      showToast("Signed in with Google — Drive and Gemini are now connected.", "check-circle");
+      logConsoleEvent("SYSTEM", `Google sign-in successful${googleAuth.email ? ' as ' + googleAuth.email : ''}. Live Drive and your own Gemini quota are now active.`, "success");
+      updateGoogleAuthUI();
+    }
+
+    function signOutGoogle() {
+      if (googleAuth.accessToken && window.google?.accounts?.oauth2) {
+        google.accounts.oauth2.revoke(googleAuth.accessToken, () => {});
+      }
+      googleAuth.accessToken = null;
+      googleAuth.email = null;
+      sessionStorage.removeItem('agentos_google_token');
+      realGDriveAuthed = false;
+      gDriveMode = 'sandbox';
+      workspaceFolderId = null;
+      updateGoogleAuthUI();
+      syncGDriveUI();
+      showToast("Signed out of Google. Falling back to sandbox mode.", "info");
+      logConsoleEvent("SYSTEM", "Google session ended. Drive reverted to sandbox and Gemini calls now require reconnecting.", "info");
+    }
+
+    function updateGoogleAuthUI() {
+      const badge = document.getElementById('google-account-badge');
+      const statusLabel = document.getElementById('google-signin-status-label');
+      const signinForm = document.getElementById('google-signin-form');
+      const signedInPanel = document.getElementById('google-signed-in-panel');
+      const emailEl = document.getElementById('google-account-email');
+      const isSignedIn = !!googleAuth.accessToken;
+
+      if (badge) {
+        badge.innerHTML = isSignedIn
+          ? `<span class="text-xs px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-xl flex items-center gap-1.5"><i data-lucide="user-check" class="w-3.5 h-3.5"></i>${googleAuth.email || 'Connected'}</span>`
+          : `<button onclick="switchLeftTab('gdrive'); document.getElementById('google-client-id')?.focus();" class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 flex items-center gap-1.5 transition-colors"><i data-lucide="log-in" class="w-3.5 h-3.5 text-amber-500"></i>Sign in with Google</button>`;
+      }
+
+      if (statusLabel) {
+        statusLabel.textContent = isSignedIn ? "Connected" : "Not Connected";
+        statusLabel.className = isSignedIn
+          ? "text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-full font-bold"
+          : "text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold";
+      }
+
+      if (signinForm) signinForm.classList.toggle('hidden', isSignedIn);
+      if (signedInPanel) signedInPanel.classList.toggle('hidden', !isSignedIn);
+      if (emailEl) emailEl.textContent = googleAuth.email || 'Connected';
+
+      const driveBadge = document.getElementById('gdrive-badge');
+      if (driveBadge) driveBadge.className = isSignedIn ? "w-2 h-2 rounded-full bg-emerald-400 animate-pulse" : "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
+
+      lucide.createIcons();
+    }
+
+    // Restore an unexpired token from this browser tab's session (survives reloads, not new tabs)
+    async function restoreGoogleSession() {
+      restoreGoogleAuthFields();
+      const saved = sessionStorage.getItem('agentos_google_token');
+      if (!saved) { updateGoogleAuthUI(); return; }
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.expires_at && parsed.expires_at > Date.now() + 30000) {
+          googleAuth.accessToken = parsed.access_token;
+          await finalizeGoogleSignIn();
+        } else {
+          sessionStorage.removeItem('agentos_google_token');
+          updateGoogleAuthUI();
+        }
+      } catch (err) {
+        sessionStorage.removeItem('agentos_google_token');
+        updateGoogleAuthUI();
+      }
     }
 
     // Scan drive or instantiate "AgentOS Workspace" system directory
@@ -1660,10 +1752,19 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       }
     }
 
-    // Direct Gemini Fetch Pipeline with Exponential Retries Wrapper
+    // Direct Gemini Fetch Pipeline — authenticated with the signed-in Google account's own OAuth token (their own quota), with exponential retries
     async function callGemini(payload) {
-      const apiKey = ""; // The execution environment supplies this key at runtime automatically.
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      if (!googleAuth.accessToken) {
+        throw new Error("Sign in with Google (top right, or the Google Account panel) to use your own Gemini API quota.");
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent`;
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${googleAuth.accessToken}`
+      };
+      if (googleAuth.projectId) headers['x-goog-user-project'] = googleAuth.projectId;
+
       const retries = 5;
       let delay = 1000;
 
@@ -1671,14 +1772,21 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         try {
           const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify(payload)
           });
-          
+
+          if (response.status === 401 || response.status === 403) {
+            googleAuth.accessToken = null;
+            sessionStorage.removeItem('agentos_google_token');
+            updateGoogleAuthUI();
+            throw new Error("Google session expired or lacks access — sign in with Google again (and confirm the Generative Language API is enabled on your project).");
+          }
+
           if (!response.ok) {
             throw new Error(`Gemini Server Connection Error: HTTP ${response.status}`);
           }
-          
+
           const result = await response.json();
           const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!text) {
@@ -1686,7 +1794,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
           }
           return text;
         } catch (error) {
-          if (i === retries - 1) throw error;
+          if (i === retries - 1 || !googleAuth.accessToken) throw error;
           await new Promise(resolve => setTimeout(resolve, delay));
           delay *= 2;
         }
