@@ -1,0 +1,29 @@
+{
+  "name": "agentlooper",
+  "version": "2.2.0",
+  "description": "Autonomous multi-agent workspace simulator — spawn, trigger, and schedule LLM agents in the browser, backed by your own Google Drive & Gemini account.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Amir Bukhari",
+  "homepage": "https://github.com/amirbukhari/AgentLooper",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/amirbukhari/AgentLooper.git"
+  },
+  "scripts": {
+    "dev": "http-server . -p 8080 -c-1 -o",
+    "start": "http-server . -p 8080 -c-1",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@html-eslint/eslint-plugin": "^0.34.0",
+    "@html-eslint/parser": "^0.34.0",
+    "eslint": "^9.17.0",
+    "http-server": "^14.1.1",
+    "prettier": "^3.4.2"
+  }
+}
