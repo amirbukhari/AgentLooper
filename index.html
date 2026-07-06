@@ -76,9 +76,9 @@
       <div>
         <div class="flex items-center gap-2">
           <h1 class="text-xl font-bold tracking-tight text-white">AgentLooper</h1>
-          <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full">v2.2 Dynamic Directories</span>
+          <span class="text-[11px] uppercase font-bold tracking-wider px-2 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full">v2.2 Dynamic Directories</span>
         </div>
-        <p class="text-xs text-slate-400">Autonomous Workspace Manager • Natural Language Ecosystem Architect • GDrive Connected</p>
+        <p class="text-xs text-slate-400">Autonomous Workspace Manager • Natural Language Ecosystem Architect • Google Drive &amp; Gemini via your own account</p>
       </div>
     </div>
     
@@ -87,11 +87,11 @@
       <!-- Workspace Directory Switcher -->
       <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1 rounded-xl">
         <i data-lucide="folder" class="w-4 h-4 text-brand-400"></i>
-        <span class="text-xs font-semibold text-slate-400">Directory:</span>
-        <select id="workspace-directory-select" onchange="switchWorkspaceUI(this.value)" class="bg-transparent text-xs font-bold text-slate-200 focus:outline-none border-none cursor-pointer">
+        <label for="workspace-directory-select" class="text-xs font-semibold text-slate-400">Directory:</label>
+        <select id="workspace-directory-select" onchange="switchWorkspaceUI(this.value)" class="bg-transparent text-xs font-bold text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 rounded border-none cursor-pointer">
           <!-- Dynamic options -->
         </select>
-        <button onclick="createNewWorkspacePrompt()" class="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors" title="Create New Directory / Workspace">
+        <button onclick="createNewWorkspacePrompt()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Create New Directory / Workspace" aria-label="Create new workspace directory">
           <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
         </button>
       </div>
@@ -103,6 +103,9 @@
         </span>
         <span id="scheduler-text" class="text-xs font-bold text-slate-300">Ticking (1s)</span>
       </div>
+      <span id="metric-steps" class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 rounded-xl border border-slate-800 flex items-center gap-1.5">
+        <i data-lucide="hash" class="w-3.5 h-3.5 text-brand-400"></i> Steps Completed: 0
+      </span>
       <div id="google-account-badge" class="flex items-center gap-2">
         <button id="google-signin-btn-header" onclick="signInWithGoogle()" class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 flex items-center gap-1.5 transition-colors">
           <i data-lucide="log-in" class="w-3.5 h-3.5 text-amber-500"></i>Sign in with Google
@@ -141,13 +144,13 @@
               <i data-lucide="sparkles" class="text-brand-400 w-5 h-5 animate-pulse"></i>
               <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">AI Ecosystem Architect</h2>
             </div>
-            <span class="text-[10px] text-slate-400 bg-brand-500/10 px-2 py-0.5 rounded-full border border-brand-500/20 font-bold">Generative Spawning</span>
+            <span class="text-[11px] text-slate-400 bg-brand-500/10 px-2 py-0.5 rounded-full border border-brand-500/20 font-bold">Generative Spawning</span>
           </div>
 
           <div class="flex flex-col gap-3">
             <p class="text-[11px] text-slate-400 italic leading-relaxed">Tell the architect what objective you want your workspace to perform. It will autonomously design, build, name, and connect 2-4 highly specialized agents with collaborative personas.</p>
             <div>
-              <textarea id="ai-architect-goal" rows="3" placeholder="e.g., Build an autonomous travel agent ecosystem that writes comprehensive markdown itineraries and validates travel routes using GDrive..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 transition-colors placeholder:text-slate-600"></textarea>
+              <textarea id="ai-architect-goal" aria-label="Ecosystem objective" rows="3" placeholder="e.g., Build an autonomous travel agent ecosystem that writes comprehensive markdown itineraries and validates travel routes using GDrive..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors placeholder:text-slate-600"></textarea>
             </div>
             <button onclick="autogenerateEcosystem()" id="btn-architect" class="w-full bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold py-2 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md shadow-brand-500/20">
               <i data-lucide="magic" class="w-3.5 h-3.5"></i> Autogenerate Ecosystem
@@ -166,17 +169,17 @@
 
           <div class="flex flex-col gap-3">
             <div>
-              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Agent Name</label>
-              <input type="text" id="new-agent-name" placeholder="e.g., Copywriter" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors">
+              <label for="new-agent-name" class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Agent Name</label>
+              <input type="text" id="new-agent-name" placeholder="e.g., Copywriter" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
             </div>
             <div>
-              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">System Instructions / Role Persona</label>
-              <textarea id="new-agent-persona" rows="3" placeholder="Define its limitations, goal, and output logic..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600"></textarea>
+              <label for="new-agent-persona" class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">System Instructions / Role Persona</label>
+              <textarea id="new-agent-persona" rows="3" placeholder="Define its limitations, goal, and output logic..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors placeholder:text-slate-600"></textarea>
             </div>
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Visual Theme</label>
-                <select id="new-agent-theme" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500">
+                <label for="new-agent-theme" class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Visual Theme</label>
+                <select id="new-agent-theme" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                   <option value="brand">Purple (Default)</option>
                   <option value="rose">Rose (Creative)</option>
                   <option value="emerald">Emerald (Analytical)</option>
@@ -219,7 +222,7 @@
               <i data-lucide="shield-check" class="text-amber-400 w-5 h-5"></i>
               <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">Google Account</h2>
             </div>
-            <span id="google-signin-status-label" class="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold">Not Connected</span>
+            <span id="google-signin-status-label" class="text-[11px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold">Not Connected</span>
           </div>
 
           <div id="google-signin-form" class="flex flex-col gap-3">
@@ -235,7 +238,7 @@
                 <i data-lucide="user-check" class="text-emerald-400 w-4 h-4 shrink-0"></i>
                 <span id="google-account-email" class="text-xs font-semibold text-slate-200 truncate">Connected</span>
               </div>
-              <button onclick="signOutGoogle()" class="text-[10px] text-slate-500 hover:text-rose-400 font-semibold shrink-0">Sign Out</button>
+              <button onclick="signOutGoogle()" class="text-[11px] text-slate-500 hover:text-rose-400 font-semibold shrink-0">Sign Out</button>
             </div>
           </div>
         </div>
@@ -247,21 +250,21 @@
               <i data-lucide="folder-open" class="text-indigo-400 w-5 h-5"></i>
               <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">Workspace Explorer</h2>
             </div>
-            <button onclick="syncGDriveUI()" class="p-1 text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/15 rounded transition-all">
+            <button onclick="syncGDriveUI()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/15 rounded transition-all flex items-center justify-center" aria-label="Refresh Drive file list">
               <i data-lucide="refresh-cw" class="w-4 h-4"></i>
             </button>
           </div>
 
           <!-- Add File Manually to Drive -->
           <div class="bg-slate-950 p-3 rounded-xl border border-slate-900/80 flex flex-col gap-2">
-            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Inject File to Drive Workspace</span>
+            <span id="manual-file-heading" class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Inject File to Drive Workspace</span>
             <div class="grid grid-cols-3 gap-2">
-              <input type="text" id="manual-file-name" placeholder="data.txt" class="col-span-2 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200">
+              <input type="text" id="manual-file-name" aria-label="New file name" placeholder="data.txt" class="col-span-2 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <button onclick="createManualDriveFile()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold py-1 rounded-lg transition-all flex items-center justify-center gap-1">
                 <i data-lucide="plus" class="w-3.5 h-3.5"></i> Write
               </button>
             </div>
-            <textarea id="manual-file-content" rows="2" placeholder="File text content for agents to read..." class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300"></textarea>
+            <textarea id="manual-file-content" aria-labelledby="manual-file-heading" rows="2" placeholder="File text content for agents to read..." class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
           </div>
 
           <!-- Interactive File Directory list -->
@@ -283,7 +286,7 @@
             <i data-lucide="network" class="text-emerald-400 w-4.5 h-4.5"></i>
             <span class="text-xs font-bold uppercase text-slate-300 tracking-wider">Live Spawn & Trigger Map</span>
           </div>
-          <span class="text-[10px] text-slate-500 flex items-center gap-1">
+          <span class="text-[11px] text-slate-500 flex items-center gap-1">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span> Real-time Graph Visualizer
           </span>
         </div>
@@ -309,14 +312,14 @@
         <div class="flex flex-col gap-3">
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Target Agent</label>
-              <select id="task-target-agent" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand-500">
+              <label for="task-target-agent" class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Target Agent</label>
+              <select id="task-target-agent" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
                 <!-- Populated dynamically -->
               </select>
             </div>
             <div>
-              <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Task Type</label>
-              <select id="task-type" onchange="toggleTaskScheduling()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-brand-500">
+              <label for="task-type" class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Task Type</label>
+              <select id="task-type" onchange="toggleTaskScheduling()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
                 <option value="once">Immediate Run (Once)</option>
                 <option value="loop">Loop Scheduler (Recurring)</option>
               </select>
@@ -326,25 +329,25 @@
           <!-- Recurring scheduling options -->
           <div id="scheduling-options" class="hidden grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-900">
             <div>
-              <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Interval (Seconds)</label>
-              <input type="number" id="task-interval" value="10" min="5" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none">
+              <label for="task-interval" class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Interval (Seconds)</label>
+              <input type="number" id="task-interval" value="10" min="5" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
             <div>
-              <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Run Limit (Iterations)</label>
-              <input type="number" id="task-iterations" value="3" min="1" max="20" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none">
+              <label for="task-iterations" class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Run Limit (Iterations)</label>
+              <input type="number" id="task-iterations" value="3" min="1" max="20" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
           </div>
 
           <div>
-            <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Core Task / Prompt Content</label>
-            <textarea id="task-prompt" rows="3" placeholder="Instruction to fire off the agent ecosystem pipeline..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition-colors placeholder:text-slate-600"></textarea>
+            <label for="task-prompt" class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Core Task / Prompt Content</label>
+            <textarea id="task-prompt" rows="3" placeholder="Instruction to fire off the agent ecosystem pipeline..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors placeholder:text-slate-600"></textarea>
           </div>
 
           <div class="flex gap-2">
             <button onclick="enqueueNewTask()" class="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/10">
               <i data-lucide="play" class="w-3.5 h-3.5"></i> Trigger Ecosystem Loop
             </button>
-            <button id="btn-pause-os" onclick="toggleScheduler()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 p-2.5 rounded-xl border border-slate-700/60 transition-all" title="Toggle System Scheduler Clock">
+            <button id="btn-pause-os" onclick="toggleScheduler()" class="min-w-[44px] min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-300 p-2.5 rounded-xl border border-slate-700/60 transition-all flex items-center justify-center" title="Toggle System Scheduler Clock" aria-label="Toggle the task scheduler clock">
               <i data-lucide="pause" id="scheduler-toggle-icon" class="w-4.5 h-4.5"></i>
             </button>
           </div>
@@ -363,12 +366,12 @@
             <i data-lucide="list-ordered" class="text-cyan-400 w-4 h-4"></i>
             <span class="text-xs font-bold uppercase text-slate-300 tracking-wider">Task Queue / Loop Scheduler</span>
           </div>
-          <span id="queue-badge" class="text-[10px] px-2 py-0.5 bg-slate-950 text-slate-400 rounded-full border border-slate-800 font-mono">0 pending</span>
+          <span id="queue-badge" class="text-[11px] px-2 py-0.5 bg-slate-950 text-slate-400 rounded-full border border-slate-800 font-mono">0 pending</span>
         </div>
 
         <div id="task-queue-list" class="flex-1 overflow-y-auto pr-1 flex flex-col gap-2">
           <!-- Dynamic Tasks -->
-          <div id="queue-empty-state" class="text-center py-6 text-slate-500 text-xs italic">
+          <div id="queue-empty-state" class="text-center py-6 text-slate-400 text-xs italic">
             No active schedules or pending tasks in queue
           </div>
         </div>
@@ -381,7 +384,7 @@
             <i data-lucide="terminal" class="text-brand-400 w-4.5 h-4.5"></i>
             <span class="text-xs font-bold uppercase text-slate-300 tracking-wider">AgentLooper Console Feed</span>
           </div>
-          <button onclick="clearConsole()" class="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1">
+          <button onclick="clearConsole()" class="text-[11px] text-slate-500 hover:text-slate-300 flex items-center gap-1">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear Feed
           </button>
         </div>
@@ -389,7 +392,7 @@
         <!-- Scrollable console events list -->
         <div id="console-feed" class="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 font-mono text-[11px] leading-relaxed">
           <!-- Messages and spawn notifications go here -->
-          <div class="text-slate-500 italic text-center py-12">
+          <div class="text-slate-400 italic text-center py-12">
             Workspace initialized. Fire a task manually or run a demo ecosystem preset to observe recursive agent execution.
           </div>
         </div>
@@ -407,7 +410,7 @@
           <i data-lucide="database" class="text-brand-400 w-5 h-5"></i>
           <span class="font-bold text-slate-200">Inspect Agent Internal States</span>
         </div>
-        <button onclick="closeInspectModal()" class="text-slate-400 hover:text-slate-100">
+        <button onclick="closeInspectModal()" class="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-100" aria-label="Close inspect panel">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -443,7 +446,7 @@
           <i data-lucide="file-text" class="text-cyan-400 w-5 h-5"></i>
           <span id="inspect-file-name" class="font-bold text-slate-200">Inspect Google Drive File</span>
         </div>
-        <button onclick="closeFileInspectModal()" class="text-slate-400 hover:text-slate-100">
+        <button onclick="closeFileInspectModal()" class="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-100" aria-label="Close file inspect panel">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -454,7 +457,7 @@
         </div>
       </div>
       <div class="px-6 py-3 bg-slate-950/40 border-t border-slate-800 flex justify-between items-center">
-        <span id="inspect-file-meta" class="text-[10px] text-slate-500 font-mono">Size: -- bytes</span>
+        <span id="inspect-file-meta" class="text-[11px] text-slate-500 font-mono">Size: -- bytes</span>
         <button onclick="closeFileInspectModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition-all">
           Close Window
         </button>
@@ -468,7 +471,7 @@
       <i id="toast-icon" data-lucide="info" class="w-5 h-5 text-brand-400"></i>
       <p id="toast-message" class="text-xs text-slate-300"></p>
     </div>
-    <button onclick="dismissToast()" class="text-slate-400 hover:text-slate-200">
+    <button onclick="dismissToast()" class="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-slate-200" aria-label="Dismiss notification">
       <i data-lucide="x" class="w-4 h-4"></i>
     </button>
   </div>
@@ -570,6 +573,48 @@
       }
     };
 
+    // Delegated click/keyboard handlers for dynamically-rebuilt lists. Wired once on the
+    // static container elements (never re-created), rather than inline onclick strings —
+    // inline onclick="fn('${value}')" is unsafe for any value containing a quote character,
+    // since HTML-escaping alone doesn't protect a value re-parsed as inline JS.
+    function wireDelegatedClickHandlers() {
+      const agentList = document.getElementById('agent-directory-list');
+      if (agentList) {
+        agentList.addEventListener('click', (e) => {
+          const btn = e.target.closest('.agent-action-btn');
+          if (!btn) return;
+          const id = btn.dataset.agentId;
+          if (btn.dataset.action === 'inspect') inspectAgent(id);
+          else if (btn.dataset.action === 'retire') deregisterAgent(id);
+        });
+      }
+
+      const queueList = document.getElementById('task-queue-list');
+      if (queueList) {
+        queueList.addEventListener('click', (e) => {
+          const btn = e.target.closest('.cancel-task-btn');
+          if (btn) cancelTask(btn.dataset.taskId);
+        });
+      }
+
+      const driveList = document.getElementById('gdrive-file-list');
+      if (driveList) {
+        const handleDriveActivate = (target) => {
+          const delBtn = target.closest('.gdrive-delete-btn');
+          if (delBtn) { deleteDriveFile(delBtn.dataset.fileKey, delBtn.dataset.isReal === 'true'); return; }
+          const row = target.closest('.gdrive-file-row');
+          if (row) inspectDriveFile(row.dataset.fileKey, row.dataset.isReal === 'true');
+        };
+        driveList.addEventListener('click', (e) => handleDriveActivate(e.target));
+        driveList.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          if (!e.target.closest('.gdrive-file-row')) return;
+          e.preventDefault();
+          handleDriveActivate(e.target);
+        });
+      }
+    }
+
     // System Setup on Load
     window.onload = function() {
       // Each step runs independently — a failure in one (e.g. a blocked CDN icon
@@ -578,6 +623,7 @@
         () => lucide.createIcons(),
         () => loadWorkspaceState(currentWorkspace, 'news'),
         () => rebuildWorkspaceDropdown(),
+        () => wireDelegatedClickHandlers(),
         () => restoreGoogleSession(),
         () => startGlobalScheduler()
       ];
@@ -977,8 +1023,8 @@ Your output must be purely JSON, matching this schema:
       if (statusLabel) {
         statusLabel.textContent = isSignedIn ? "Connected" : "Not Connected";
         statusLabel.className = isSignedIn
-          ? "text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-full font-bold"
-          : "text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold";
+          ? "text-[11px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-full font-bold"
+          : "text-[11px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold";
       }
 
       if (signinForm) signinForm.classList.toggle('hidden', isSignedIn);
@@ -1052,22 +1098,22 @@ Your output must be purely JSON, matching this schema:
 
       if (gDriveMode === 'sandbox') {
         if (!mockGDriveFiles || mockGDriveFiles.length === 0) {
-          container.innerHTML = `<p class="text-center text-slate-500 italic text-xs py-4">No Sandbox Files Sync'd.</p>`;
+          container.innerHTML = `<p class="text-center text-slate-400 italic text-xs py-4">No Sandbox Files Sync'd.</p>`;
           return;
         }
 
         mockGDriveFiles.forEach((file, index) => {
           const div = document.createElement('div');
-          div.className = "flex justify-between items-center p-2.5 bg-slate-950 border border-slate-900 rounded-xl hover:border-slate-800 transition-colors cursor-pointer group";
+          div.className = "flex justify-between items-center p-2.5 bg-slate-950 border border-slate-900 rounded-xl hover:border-slate-800 transition-colors group";
           div.innerHTML = `
-            <div class="flex-1 min-w-0" onclick="inspectDriveFile('${file.name}', false)">
+            <div class="flex-1 min-w-0 gdrive-file-row cursor-pointer" data-file-key="${escapeHtml(file.name)}" data-is-real="false" role="button" tabindex="0" aria-label="Inspect file ${escapeHtml(file.name)}">
               <div class="flex items-center gap-1.5">
                 <i data-lucide="file-text" class="w-4 h-4 text-cyan-400"></i>
-                <h4 class="text-xs font-bold text-slate-300 truncate">${file.name}</h4>
+                <h4 class="text-xs font-bold text-slate-300 truncate">${escapeHtml(file.name)}</h4>
               </div>
-              <p class="text-[9px] text-slate-500 mt-0.5">Size: ${file.size} • Updated: ${file.updated}</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Size: ${escapeHtml(file.size)} • Updated: ${escapeHtml(file.updated)}</p>
             </div>
-            <button onclick="deleteDriveFile('${file.name}', false, event)" class="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-all">
+            <button data-file-key="${escapeHtml(file.name)}" data-is-real="false" class="gdrive-delete-btn min-w-[36px] min-h-[36px] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-all" aria-label="Delete file ${escapeHtml(file.name)}">
               <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
             </button>
           `;
@@ -1089,7 +1135,7 @@ Your output must be purely JSON, matching this schema:
 
           const files = response.result.files;
           if (!files || files.length === 0) {
-            container.innerHTML = `<p class="text-center text-slate-500 italic text-xs py-4">No Workspace files found in Drive. Write one using tools or the manual injector!</p>`;
+            container.innerHTML = `<p class="text-center text-slate-400 italic text-xs py-4">No Workspace files found in Drive. Write one using tools or the manual injector!</p>`;
             return;
           }
 
@@ -1097,16 +1143,16 @@ Your output must be purely JSON, matching this schema:
             const sizeFormatted = file.size ? `${(file.size / 1024).toFixed(1)} KB` : '0 B';
             const updatedTime = new Date(file.modifiedTime).toLocaleTimeString();
             const div = document.createElement('div');
-            div.className = "flex justify-between items-center p-2.5 bg-slate-950 border border-slate-900 rounded-xl hover:border-slate-800 transition-colors cursor-pointer group";
+            div.className = "flex justify-between items-center p-2.5 bg-slate-950 border border-slate-900 rounded-xl hover:border-slate-800 transition-colors group";
             div.innerHTML = `
-              <div class="flex-1 min-w-0" onclick="inspectDriveFile('${file.id}', true)">
+              <div class="flex-1 min-w-0 gdrive-file-row cursor-pointer" data-file-key="${escapeHtml(file.id)}" data-is-real="true" role="button" tabindex="0" aria-label="Inspect file ${escapeHtml(file.name)}">
                 <div class="flex items-center gap-1.5">
                   <i data-lucide="file-text" class="w-4 h-4 text-emerald-400"></i>
-                  <h4 class="text-xs font-bold text-slate-300 truncate">${file.name}</h4>
+                  <h4 class="text-xs font-bold text-slate-300 truncate">${escapeHtml(file.name)}</h4>
                 </div>
-                <p class="text-[9px] text-slate-500 mt-0.5">Size: ${sizeFormatted} • ID: ${file.id.substring(0,6)}... • Modified: ${updatedTime}</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">Size: ${escapeHtml(sizeFormatted)} • ID: ${escapeHtml(file.id.substring(0,6))}... • Modified: ${escapeHtml(updatedTime)}</p>
               </div>
-              <button onclick="deleteDriveFile('${file.id}', true, event)" class="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-all">
+              <button data-file-key="${escapeHtml(file.id)}" data-is-real="true" class="gdrive-delete-btn min-w-[36px] min-h-[36px] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-all" aria-label="Delete file ${escapeHtml(file.name)}">
                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
               </button>
             `;
@@ -1258,9 +1304,7 @@ Your output must be purely JSON, matching this schema:
       document.getElementById('file-inspect-modal').classList.add('hidden');
     }
 
-    async function deleteDriveFile(key, isRealId, event) {
-      if (event) event.stopPropagation(); // Stop parent row inspection triggering
-      
+    async function deleteDriveFile(key, isRealId) {
       if (!isRealId) {
         mockGDriveFiles = mockGDriveFiles.filter(f => f.name !== key);
         showToast(`Sandbox file [${key}] deleted.`, "trash-2", "amber");
@@ -1472,9 +1516,12 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       const spawnRegex = /\[CREATE_AGENT:\s*name="([^"]+)",\s*persona="([^"]+)"\]/gi;
       let match;
       while ((match = spawnRegex.exec(text)) !== null) {
-        const spawnedName = match[1].trim();
+        // Sanitize like every other agent-creation path (manual register, AI architect) so
+        // LLM-controlled names can never carry HTML/quote characters into the DOM later.
+        const spawnedName = match[1].trim().replace(/[^a-zA-Z0-9]/g, "");
         const spawnedPersona = match[2].trim();
 
+        if (!spawnedName) continue;
         if (agents[spawnedName]) {
           logConsoleEvent("SYSTEM", `Agent '${spawnedName}' already registered. Skipping dynamic spawn.`, "info");
           continue;
@@ -1507,9 +1554,10 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       // 2. Check for Agent Triggers: [TRIGGER_AGENT: name="Name", task="..."]
       const triggerRegex = /\[TRIGGER_AGENT:\s*name="([^"]+)",\s*task="([^"]+)"\]/gi;
       while ((match = triggerRegex.exec(text)) !== null) {
-        const targetName = match[1].trim();
+        const targetName = match[1].trim().replace(/[^a-zA-Z0-9]/g, "");
         const taskContent = match[2].trim();
 
+        if (!targetName) continue;
         if (!agents[targetName]) {
           logConsoleEvent("SYSTEM", `Cannot trigger '${targetName}': Agent does not exist. Spawning standard clone...`, "info");
           // Fallback spawn
@@ -1544,11 +1592,12 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       // 3. Check for Loops: [SCHEDULE_LOOP: name="Name", interval_sec="X", limit="Y", task="..."]
       const loopRegex = /\[SCHEDULE_LOOP:\s*name="([^"]+)",\s*interval_sec="([^"]+)",\s*limit="([^"]+)",\s*task="([^"]+)"\]/gi;
       while ((match = loopRegex.exec(text)) !== null) {
-        const targetName = match[1].trim();
+        const targetName = match[1].trim().replace(/[^a-zA-Z0-9]/g, "");
         const intervalSec = parseInt(match[2].trim()) || 10;
         const limit = parseInt(match[3].trim()) || 3;
         const taskContent = match[4].trim();
 
+        if (!targetName) continue;
         if (!agents[targetName]) {
           logConsoleEvent("SYSTEM", `Loop target '${targetName}' missing. Loop scheduling skipped.`, "info");
           continue;
@@ -1899,15 +1948,15 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5">
               <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
-              <h3 class="font-bold text-xs truncate uppercase tracking-wider">${agent.id}</h3>
+              <h3 class="font-bold text-xs truncate uppercase tracking-wider">${escapeHtml(agent.id)}</h3>
             </div>
-            <p class="text-[10px] text-slate-400 mt-1 truncate max-w-[210px]">${agent.persona}</p>
+            <p class="text-[11px] text-slate-400 mt-1 truncate max-w-[210px]">${escapeHtml(agent.persona)}</p>
           </div>
           <div class="flex items-center gap-1">
-            <button onclick="inspectAgent('${agent.id}')" class="p-1 text-slate-400 hover:text-slate-200 rounded transition-all flex items-center justify-center ${hoverBtn}" title="Inspect Memory Database">
+            <button data-agent-id="${escapeHtml(agent.id)}" data-action="inspect" class="agent-action-btn min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-slate-200 rounded transition-all flex items-center justify-center ${hoverBtn}" title="Inspect Memory Database" aria-label="Inspect ${escapeHtml(agent.id)}'s memory">
               <i data-lucide="database" class="w-3.5 h-3.5"></i>
             </button>
-            <button onclick="deregisterAgent('${agent.id}')" class="p-1 text-slate-500 hover:text-rose-400 rounded transition-all flex items-center justify-center hover:bg-rose-500/10" title="Retire Agent">
+            <button data-agent-id="${escapeHtml(agent.id)}" data-action="retire" class="agent-action-btn min-w-[32px] min-h-[32px] p-1.5 text-slate-500 hover:text-rose-400 rounded transition-all flex items-center justify-center hover:bg-rose-500/10" title="Retire Agent" aria-label="Retire ${escapeHtml(agent.id)}">
               <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -1939,7 +1988,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
       if (taskQueue.length === 0) {
         container.innerHTML = `
-          <div id="queue-empty-state" class="text-center py-6 text-slate-500 text-xs italic">
+          <div id="queue-empty-state" class="text-center py-6 text-slate-400 text-xs italic">
             No active schedules or pending tasks in queue
           </div>
         `;
@@ -1950,28 +1999,28 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         const div = document.createElement('div');
         const remainsSec = Math.max(0, Math.round((task.scheduledTime - Date.now()) / 1000));
         
-        let statusTag = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-950 text-slate-400 border border-slate-800">In ${remainsSec}s</span>`;
+        let statusTag = `<span class="px-1.5 py-0.5 rounded text-[11px] font-bold uppercase bg-slate-950 text-slate-400 border border-slate-800">In ${remainsSec}s</span>`;
         if (task.status === 'processing') {
-          statusTag = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">Running</span>`;
+          statusTag = `<span class="px-1.5 py-0.5 rounded text-[11px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">Running</span>`;
         }
 
         let loopTag = '';
         if (task.type === 'loop') {
-          loopTag = `<span class="text-[9px] px-1.5 py-0.5 bg-brand-500/15 border border-brand-500/20 text-brand-400 rounded-full font-bold">Iter ${task.currentIteration}/${task.maxIterations}</span>`;
+          loopTag = `<span class="text-[11px] px-1.5 py-0.5 bg-brand-500/15 border border-brand-500/20 text-brand-400 rounded-full font-bold">Iter ${task.currentIteration}/${task.maxIterations}</span>`;
         }
 
         div.className = "p-2.5 bg-slate-950/60 border border-slate-900 rounded-xl flex items-center justify-between gap-2.5";
         div.innerHTML = `
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="text-[10px] font-bold text-slate-300 font-mono">${task.fromAgent} <i data-lucide="arrow-right" class="w-3 h-3 inline"></i> ${task.toAgent}</span>
+              <span class="text-[11px] font-bold text-slate-300 font-mono">${escapeHtml(task.fromAgent)} <i data-lucide="arrow-right" class="w-3 h-3 inline"></i> ${escapeHtml(task.toAgent)}</span>
               ${statusTag}
               ${loopTag}
             </div>
-            <p class="text-[10px] text-slate-500 truncate mt-1 italic">${task.promptText}</p>
+            <p class="text-[11px] text-slate-400 truncate mt-1 italic">${escapeHtml(task.promptText)}</p>
           </div>
           <div>
-            <button onclick="cancelTask('${task.id}')" class="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 transition-colors" title="Abort Loop">
+            <button data-task-id="${escapeHtml(task.id)}" class="cancel-task-btn min-w-[32px] min-h-[32px] text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition-colors" title="Abort Loop" aria-label="Abort this task">
               <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -2022,7 +2071,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       memoryContainer.innerHTML = '';
 
       if (agent.memory.length === 0) {
-        memoryContainer.innerHTML = `<div class="text-slate-500 italic">Ephemeris logs are currently empty. Execute loops to gather history.</div>`;
+        memoryContainer.innerHTML = `<div class="text-slate-400 italic">Ephemeris logs are currently empty. Execute loops to gather history.</div>`;
       } else {
         agent.memory.forEach(log => {
           const p = document.createElement('p');
@@ -2085,7 +2134,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       
       if (type === "response") {
         block.innerHTML = `
-          <div class="flex justify-between items-center font-bold text-[10px] uppercase tracking-wider">
+          <div class="flex justify-between items-center font-bold text-[11px] uppercase tracking-wider">
             <span>🤖 Response Output From: [${source}]</span>
             <span>${new Date().toLocaleTimeString()}</span>
           </div>
@@ -2093,7 +2142,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         `;
       } else {
         block.innerHTML = `
-          <div class="flex justify-between items-center font-bold text-[10px] uppercase tracking-wider">
+          <div class="flex justify-between items-center font-bold text-[11px] uppercase tracking-wider">
             <span>🔧 SYSTEM EVENT</span>
             <span>${new Date().toLocaleTimeString()}</span>
           </div>
@@ -2107,7 +2156,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
     function clearConsole() {
       document.getElementById('console-feed').innerHTML = `
-        <div class="text-slate-500 italic text-center py-12">
+        <div class="text-slate-400 italic text-center py-12">
           Console cleared. Execute actions to trigger events.
         </div>
       `;
@@ -2124,7 +2173,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
       // Draw User controller node manually at visual top
       const userNode = document.createElement('div');
-      userNode.className = "absolute w-12 h-12 bg-slate-900 border border-emerald-500/50 rounded-full flex flex-col items-center justify-center text-[10px] font-bold text-emerald-400 shadow-lg pointer-events-auto cursor-pointer hover:scale-105 transition-transform";
+      userNode.className = "absolute w-12 h-12 bg-slate-900 border border-emerald-500/50 rounded-full flex flex-col items-center justify-center text-[11px] font-bold text-emerald-400 shadow-lg pointer-events-auto cursor-pointer hover:scale-105 transition-transform";
       userNode.style.left = `calc(${positions['User'].x}% - 24px)`;
       userNode.style.top = `calc(${positions['User'].y}% - 24px)`;
       userNode.innerHTML = `
@@ -2135,18 +2184,20 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
       // Draw Google Drive system folder node on map top right
       const driveNode = document.createElement('div');
-      driveNode.className = "absolute w-14 h-14 bg-slate-900 border border-amber-500/50 rounded-full flex flex-col items-center justify-center text-[9px] font-bold text-amber-400 shadow-lg pointer-events-auto cursor-pointer hover:scale-105 transition-all";
+      driveNode.className = "absolute w-14 h-14 bg-slate-900 border border-amber-500/50 rounded-full flex flex-col items-center justify-center text-[11px] font-bold text-amber-400 shadow-lg pointer-events-auto cursor-pointer hover:scale-105 transition-all focus-visible:ring-2 focus-visible:ring-white/70";
       driveNode.style.left = `calc(${positions['GDrive'].x}% - 28px)`;
       driveNode.style.top = `calc(${positions['GDrive'].y}% - 28px)`;
+      driveNode.setAttribute('role', 'button');
+      driveNode.setAttribute('tabindex', '0');
+      driveNode.setAttribute('aria-label', 'Open Google Drive workspace explorer');
       driveNode.innerHTML = `
         <i data-lucide="cloud" class="w-4.5 h-4.5 animate-bounce"></i>
         <span>GDrive</span>
       `;
-      // Let user jump straight to explorer tab when clicking visual Cloud node!
-      driveNode.onclick = () => {
-        switchLeftTab('gdrive');
-        showToast("Switched tab focus to Google Drive Directory Viewer.");
-      };
+      // Let user jump straight to explorer tab when clicking or keyboard-activating the visual Cloud node!
+      const openDriveTab = () => { switchLeftTab('gdrive'); showToast("Switched tab focus to Google Drive Directory Viewer."); };
+      driveNode.onclick = openDriveTab;
+      driveNode.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDriveTab(); } };
       nodesContainer.appendChild(driveNode);
 
       // Render agent nodes
@@ -2163,16 +2214,20 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
         const node = document.createElement('div');
         node.id = `node-${name}`;
-        node.className = `absolute w-14 h-14 border rounded-full flex flex-col items-center justify-center text-[10px] font-bold shadow-lg pointer-events-auto cursor-pointer hover:scale-110 transition-transform ${themeColor}`;
+        node.className = `absolute w-14 h-14 border rounded-full flex flex-col items-center justify-center text-[11px] font-bold shadow-lg pointer-events-auto cursor-pointer hover:scale-110 transition-transform focus-visible:ring-2 focus-visible:ring-white/70 ${themeColor}`;
         node.style.left = `calc(${pos.x}% - 28px)`;
         node.style.top = `calc(${pos.y}% - 28px)`;
+        node.setAttribute('role', 'button');
+        node.setAttribute('tabindex', '0');
+        node.setAttribute('aria-label', `Inspect agent ${name}`);
         node.innerHTML = `
           <i data-lucide="bot" class="w-4 h-4 mb-0.5"></i>
-          <span class="truncate max-w-[50px] uppercase text-[9px] tracking-wider">${name}</span>
+          <span class="truncate max-w-[50px] uppercase text-[11px] tracking-wider">${escapeHtml(name)}</span>
         `;
-        
-        // Let users inspect directly by clicking floating graph node elements!
+
+        // Let users inspect directly by clicking or keyboard-activating floating graph node elements!
         node.onclick = () => inspectAgent(name);
+        node.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inspectAgent(name); } };
 
         nodesContainer.appendChild(node);
       });
