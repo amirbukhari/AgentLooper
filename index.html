@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgentOS: Autonomous Spawner & Workspace Directory Schedulers</title>
+  <title>AgentLooper: Autonomous Spawner & Workspace Directory Schedulers</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Tailwind Configuration -->
@@ -75,7 +75,7 @@
       </div>
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="text-xl font-bold tracking-tight text-white">AgentOS</h1>
+          <h1 class="text-xl font-bold tracking-tight text-white">AgentLooper</h1>
           <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full">v2.2 Dynamic Directories</span>
         </div>
         <p class="text-xs text-slate-400">Autonomous Workspace Manager • Natural Language Ecosystem Architect • GDrive Connected</p>
@@ -101,7 +101,7 @@
           <span id="scheduler-pulse" class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
           <span id="scheduler-status" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
         </span>
-        <span id="scheduler-text" class="text-xs font-bold text-slate-300">OS Ticking (1s)</span>
+        <span id="scheduler-text" class="text-xs font-bold text-slate-300">Ticking (1s)</span>
       </div>
       <div id="google-account-badge" class="flex items-center gap-2">
         <button id="google-signin-btn-header" onclick="signInWithGoogle()" class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 flex items-center gap-1.5 transition-colors">
@@ -379,7 +379,7 @@
         <div class="flex justify-between items-center border-b border-slate-800/60 pb-2">
           <div class="flex items-center gap-1.5">
             <i data-lucide="terminal" class="text-brand-400 w-4.5 h-4.5"></i>
-            <span class="text-xs font-bold uppercase text-slate-300 tracking-wider">AgentOS Console Feed</span>
+            <span class="text-xs font-bold uppercase text-slate-300 tracking-wider">AgentLooper Console Feed</span>
           </div>
           <button onclick="clearConsole()" class="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear Feed
@@ -582,7 +582,7 @@
         () => startGlobalScheduler()
       ];
       bootSteps.forEach(step => {
-        try { step(); } catch (err) { console.error("AgentOS boot step failed:", err); }
+        try { step(); } catch (err) { console.error("AgentLooper boot step failed:", err); }
       });
     };
 
@@ -1010,13 +1010,13 @@ Your output must be purely JSON, matching this schema:
       }
     }
 
-    // Scan drive or instantiate "AgentOS Workspace" system directory
+    // Scan drive or instantiate "AgentLooper Workspace" system directory
     async function setupRealDriveWorkspaceFolder() {
       if (!realGDriveAuthed) return;
       try {
-        logConsoleEvent("SYSTEM", "Querying GDrive directory for existing AgentOS Workspace folder...", "info");
+        logConsoleEvent("SYSTEM", "Querying GDrive directory for existing AgentLooper Workspace folder...", "info");
         const response = await gapi.client.drive.files.list({
-          q: "name = 'AgentOS Workspace' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+          q: "name = 'AgentLooper Workspace' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
           fields: 'files(id, name)',
           spaces: 'drive'
         });
@@ -1024,13 +1024,13 @@ Your output must be purely JSON, matching this schema:
         const files = response.result.files;
         if (files && files.length > 0) {
           workspaceFolderId = files[0].id;
-          logConsoleEvent("SYSTEM", `Existing folder 'AgentOS Workspace' connected (ID: ${workspaceFolderId})`, "success");
+          logConsoleEvent("SYSTEM", `Existing folder 'AgentLooper Workspace' connected (ID: ${workspaceFolderId})`, "success");
         } else {
           // Instatitate a brand-new folder
-          logConsoleEvent("SYSTEM", "Creating fresh 'AgentOS Workspace' directory in your Google Drive...", "info");
+          logConsoleEvent("SYSTEM", "Creating fresh 'AgentLooper Workspace' directory in your Google Drive...", "info");
           const createResponse = await gapi.client.drive.files.create({
             resource: {
-              name: 'AgentOS Workspace',
+              name: 'AgentLooper Workspace',
               mimeType: 'application/vnd.google-apps.folder'
             },
             fields: 'id'
@@ -1311,10 +1311,10 @@ Your output must be purely JSON, matching this schema:
         clearInterval(clockIntervalId);
         clockIntervalId = null;
         isTicking = false;
-        showToast("AgentOS global clock ticks paused.", "pause", "amber");
+        showToast("AgentLooper global clock ticks paused.", "pause", "amber");
       } else {
         startGlobalScheduler();
-        showToast("AgentOS global clock resumed ticking.", "play");
+        showToast("AgentLooper global clock resumed ticking.", "play");
       }
       updateSchedulerUI();
     }
@@ -1328,12 +1328,12 @@ Your output must be purely JSON, matching this schema:
       if (isTicking) {
         pulse.className = "absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-pulse";
         status.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500";
-        label.textContent = "OS Ticking (1s)";
+        label.textContent = "Ticking (1s)";
         toggleIcon.setAttribute('data-lucide', 'pause');
       } else {
         pulse.className = "hidden";
         status.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500";
-        label.textContent = "OS Paused";
+        label.textContent = "Paused";
         toggleIcon.setAttribute('data-lucide', 'play');
       }
       lucide.createIcons();
@@ -1421,7 +1421,7 @@ Your output must be purely JSON, matching this schema:
 
 ---
 CRITICAL OPERATING DIRECTIVES:
-You exist within the AgentOS runtime. You can directly command and manipulate the environment.
+You exist within the AgentLooper runtime. You can directly command and manipulate the environment.
 If you need helper tools, you can issue commands anywhere inside your output text.
 The parser reads instructions with specific tag syntax:
 
