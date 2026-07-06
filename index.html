@@ -104,7 +104,7 @@
         <span id="scheduler-text" class="text-xs font-bold text-slate-300">OS Ticking (1s)</span>
       </div>
       <div id="google-account-badge" class="flex items-center gap-2">
-        <button id="google-signin-btn-header" onclick="switchLeftTab('gdrive'); document.getElementById('google-client-id')?.focus();" class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 flex items-center gap-1.5 transition-colors">
+        <button id="google-signin-btn-header" onclick="signInWithGoogle()" class="text-xs px-2.5 py-1.5 bg-slate-900 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 flex items-center gap-1.5 transition-colors">
           <i data-lucide="log-in" class="w-3.5 h-3.5 text-amber-500"></i>Sign in with Google
         </button>
         <span id="google-connected-badge-header" class="hidden text-xs px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-xl inline-flex items-center gap-1.5">
@@ -224,26 +224,9 @@
 
           <div id="google-signin-form" class="flex flex-col gap-3">
             <p class="text-[11px] text-slate-400 italic leading-relaxed">One Google sign-in powers both your live Google Drive and your own Gemini API usage (billed to your Google Cloud project, no shared/pasted API key needed).</p>
-            <div>
-              <label class="block text-[9px] font-semibold text-slate-500 uppercase">OAuth Client ID</label>
-              <input type="text" id="google-client-id" placeholder="your-client-id.apps.googleusercontent.com" class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300">
-            </div>
-            <div>
-              <label class="block text-[9px] font-semibold text-slate-500 uppercase">Google Cloud Project ID <span class="normal-case text-slate-600">(optional, improves quota routing)</span></label>
-              <input type="text" id="google-project-id" placeholder="my-gcp-project-id" class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-300">
-            </div>
             <button onclick="signInWithGoogle()" class="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold py-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5">
               <i data-lucide="log-in" class="w-3.5 h-3.5"></i> Sign in with Google
             </button>
-            <p class="text-[10px] text-slate-500 leading-relaxed">
-              One-time setup: create an OAuth Client ID in
-              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" class="text-brand-400 underline">Google Cloud Console</a>
-              (Web application, add this page's URL as an Authorized JavaScript origin), then enable the
-              <a href="https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com" target="_blank" rel="noopener" class="text-brand-400 underline">Generative Language API</a>
-              and
-              <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener" class="text-brand-400 underline">Google Drive API</a>
-              on that same project.
-            </p>
           </div>
 
           <div id="google-signed-in-panel" class="hidden flex flex-col gap-3">
@@ -524,9 +507,13 @@
     let workspaceFolderId = null;
 
     // Unified Google Sign-In (Drive + Gemini) state
+    // Identifies this app to Google — like any "Sign in with Google" button, this ID is
+    // public and baked into the page (it's restricted server-side to this site's origin).
+    // Only the OAuth client_secret would need to stay off the client; this flow never uses one.
+    const GOOGLE_OAUTH_CLIENT_ID = '513516542701-8g2krk19motoiqstqnu0mb36vkgvkshu.apps.googleusercontent.com';
+    const GOOGLE_CLOUD_PROJECT_ID = 'smart-return-151804';
+
     let googleAuth = {
-      clientId: '',
-      projectId: '',
       accessToken: null,
       email: null,
       tokenClient: null
@@ -889,41 +876,17 @@ Your output must be purely JSON, matching this schema:
       }
     }
 
-    // Prefill saved Client ID / Project ID (not the token itself) so users don't retype every visit.
-    // Falls back to the input's baked-in default value when nothing has been saved yet.
-    function restoreGoogleAuthFields() {
-      const clientIdInput = document.getElementById('google-client-id');
-      const projectIdInput = document.getElementById('google-project-id');
-      const savedClientId = localStorage.getItem('agentos_google_client_id');
-      const savedProjectId = localStorage.getItem('agentos_google_project_id');
-      if (savedClientId !== null) clientIdInput.value = savedClientId;
-      if (savedProjectId !== null) projectIdInput.value = savedProjectId;
-      googleAuth.clientId = clientIdInput.value;
-      googleAuth.projectId = projectIdInput.value;
-    }
-
-    // Kick off a single Google OAuth consent covering both Drive and Gemini (cloud-platform) scopes
+    // Kick off a single Google OAuth consent covering both Drive and Gemini (cloud-platform) scopes.
+    // No user input needed — the Client ID identifies this app (like any "Sign in with Google"
+    // button on any site) and is baked in above, not something the signing-in user provides.
     function signInWithGoogle() {
-      const clientId = document.getElementById('google-client-id').value.trim();
-      const projectId = document.getElementById('google-project-id').value.trim();
-
-      if (!clientId) {
-        showToast("Paste your Google OAuth Client ID first.", "alert-triangle", "error");
-        return;
-      }
-
       if (typeof google === 'undefined' || !google.accounts) {
         showToast("Google Identity script hasn't finished loading yet. Try again in a moment.", "alert-triangle", "error");
         return;
       }
 
-      localStorage.setItem('agentos_google_client_id', clientId);
-      localStorage.setItem('agentos_google_project_id', projectId);
-      googleAuth.clientId = clientId;
-      googleAuth.projectId = projectId;
-
       googleAuth.tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
+        client_id: GOOGLE_OAUTH_CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email',
         callback: async (tokenResponse) => {
           if (tokenResponse.error) {
@@ -1030,7 +993,6 @@ Your output must be purely JSON, matching this schema:
 
     // Restore an unexpired token from this browser tab's session (survives reloads, not new tabs)
     async function restoreGoogleSession() {
-      restoreGoogleAuthFields();
       const saved = sessionStorage.getItem('agentos_google_token');
       if (!saved) { updateGoogleAuthUI(); return; }
       try {
@@ -1770,7 +1732,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${googleAuth.accessToken}`
       };
-      if (googleAuth.projectId) headers['x-goog-user-project'] = googleAuth.projectId;
+      headers['x-goog-user-project'] = GOOGLE_CLOUD_PROJECT_ID;
 
       const retries = 5;
       let delay = 1000;
