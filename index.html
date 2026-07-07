@@ -157,7 +157,7 @@
               <textarea id="ai-architect-goal" aria-label="Ecosystem objective" rows="3" placeholder="e.g., Build an autonomous travel agent ecosystem that writes comprehensive markdown itineraries and validates travel routes using GDrive..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors placeholder:text-slate-600"></textarea>
             </div>
             <button onclick="autogenerateEcosystem()" id="btn-architect" class="w-full bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold py-2 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md shadow-brand-500/20">
-              <i data-lucide="magic" class="w-3.5 h-3.5"></i> Autogenerate Ecosystem
+              <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Autogenerate Ecosystem
             </button>
           </div>
         </div>
@@ -1021,7 +1021,7 @@ Your output must be purely JSON, matching this schema:
         showToast("Architecture generation failed.", "alert-triangle", "error");
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<i data-lucide="magic" class="w-3.5 h-3.5"></i> Autogenerate Ecosystem`;
+        btn.innerHTML = `<i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Autogenerate Ecosystem`;
         lucide.createIcons();
       }
     }
@@ -1122,8 +1122,11 @@ Your output must be purely JSON, matching this schema:
           // it otherwise only surfaces later as a confusing 403 from whichever API needed it.
           const grantedScopes = (tokenResponse.scope || '').split(' ').filter(Boolean);
           if (!grantedScopes.includes('https://www.googleapis.com/auth/cloud-platform')) {
+            console.warn("Google sign-in did not grant cloud-platform scope. Granted scopes:", grantedScopes);
             logConsoleEvent("SYSTEM", `⚠️ Signed in, but the "Cloud Platform" permission checkbox was not granted — Gemini calls will fail with a 403 until you sign in again and leave that box checked.`, "error");
             showToast('Signed in, but Gemini access wasn\'t granted — sign in again and keep the Cloud Platform box checked.', "alert-triangle", "error");
+          } else {
+            console.log("Google sign-in granted scopes:", grantedScopes);
           }
 
           googleAuth.accessToken = tokenResponse.access_token;
