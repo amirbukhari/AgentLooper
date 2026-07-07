@@ -46,7 +46,7 @@ the whole system before connecting any Google account.
   (`calendar.events`), and Sheets (`spreadsheets`). Nothing is proxied through a server.
 - **Sandbox vs. real Drive.** Start against mock files; flip to real Google Drive
   once signed in.
-- **Starter presets.** Newsletter and code-generation agent teams are built in.
+- **Starter presets.** A band-manager (default) and code-generation agent team are built in.
 
 ## Quick start
 
@@ -85,8 +85,8 @@ Then, in the [Google Cloud Console](https://console.cloud.google.com/):
 1. Create an OAuth 2.0 **Web application** client ID.
 2. Add your origin(s) (e.g. `http://localhost:8080` and your Pages URL) to
    **Authorized JavaScript origins**.
-3. Enable the APIs the tools use: **Generative Language API** (Gemini), **Google Drive
-   API**, **Gmail API**, **Google Calendar API**, and **Google Sheets API**.
+3. Enable the APIs the tools use: **Gemini API**, **Google Drive API**, **Gmail API**,
+   **Google Calendar API**, and **Google Sheets API**.
 4. Add the required scopes to the OAuth consent screen: `cloud-platform`, `drive.file`,
    `userinfo.email`, `gmail.compose`, `calendar.events`, `spreadsheets`.
 

@@ -132,6 +132,10 @@
           <i data-lucide="hard-drive" class="w-4 h-4"></i> GDrive Workspace
           <span id="gdrive-badge" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
         </button>
+        <button id="tab-btn-connectors" onclick="switchLeftTab('connectors')" class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200">
+          <i data-lucide="plug-zap" class="w-4 h-4"></i> Connectors
+          <span id="connectors-badge" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        </button>
       </div>
 
       <!-- Left Tab Container 1: Agents Registry, Architect & Manual Creator -->
@@ -282,6 +286,76 @@
           <div class="flex-1 overflow-y-auto max-h-[250px] pr-1 flex flex-col gap-2" id="gdrive-file-list">
             <!-- Dynamic files -->
           </div>
+        </div>
+      </div>
+
+      <!-- Left Tab Container 3: Workspace Connectors (Gmail / Calendar / Sheets) -->
+      <div id="tab-panel-connectors" class="hidden flex flex-col gap-4">
+        <!-- Gmail Connector -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col gap-3">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-2">
+            <div class="flex items-center gap-2">
+              <i data-lucide="mail" class="text-rose-400 w-4.5 h-4.5"></i>
+              <h3 class="font-bold text-xs text-slate-200 uppercase tracking-wide">Gmail</h3>
+            </div>
+            <span id="connector-status-gmail" class="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold">Not Connected</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span id="gmail-draft-count" class="text-[11px] text-slate-400">Drafts: —</span>
+            <div class="flex gap-1.5">
+              <button onclick="refreshGmailConnector()" class="min-w-[28px] min-h-[28px] p-1 text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 rounded transition-all flex items-center justify-center" title="Refresh Gmail drafts" aria-label="Refresh Gmail drafts count">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              </button>
+              <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener noreferrer" class="text-[11px] px-2 py-1 bg-rose-600/80 hover:bg-rose-500 text-white font-semibold rounded-lg flex items-center gap-1">
+                <i data-lucide="external-link" class="w-3 h-3"></i> Open
+              </a>
+            </div>
+          </div>
+          <div id="connector-log-gmail" class="flex flex-col gap-1 text-[11px] max-h-[100px] overflow-y-auto pr-1">
+            <p class="italic text-slate-500">No activity yet.</p>
+          </div>
+        </div>
+
+        <!-- Calendar Connector -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col gap-3">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-2">
+            <div class="flex items-center gap-2">
+              <i data-lucide="calendar" class="text-sky-400 w-4.5 h-4.5"></i>
+              <h3 class="font-bold text-xs text-slate-200 uppercase tracking-wide">Calendar</h3>
+            </div>
+            <span id="connector-status-calendar" class="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold">Not Connected</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] text-slate-400">Upcoming events</span>
+            <button onclick="refreshCalendarConnector()" class="min-w-[28px] min-h-[28px] p-1 text-slate-400 hover:text-sky-300 hover:bg-sky-500/10 rounded transition-all flex items-center justify-center" title="Refresh upcoming events" aria-label="Refresh upcoming calendar events">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+          <div id="connector-events-calendar" class="flex flex-col gap-1 text-[11px] text-slate-300 max-h-[100px] overflow-y-auto pr-1">
+            <p class="italic text-slate-500">Sign in to load events.</p>
+          </div>
+          <div id="connector-log-calendar" class="flex flex-col gap-1 text-[11px] max-h-[80px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- Sheets Connector -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 shadow-xl flex flex-col gap-3">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-2">
+            <div class="flex items-center gap-2">
+              <i data-lucide="table" class="text-emerald-400 w-4.5 h-4.5"></i>
+              <h3 class="font-bold text-xs text-slate-200 uppercase tracking-wide">Sheets</h3>
+            </div>
+            <span id="connector-status-sheets" class="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold">Not Connected</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] text-slate-400">Spreadsheets in Workspace</span>
+            <button onclick="refreshSheetsConnector()" class="min-w-[28px] min-h-[28px] p-1 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded transition-all flex items-center justify-center" title="Refresh spreadsheet list" aria-label="Refresh spreadsheet list">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+          <div id="connector-sheets-list" class="flex flex-col gap-1 text-[11px] text-slate-300 max-h-[100px] overflow-y-auto pr-1">
+            <p class="italic text-slate-500">Sign in to load spreadsheets.</p>
+          </div>
+          <div id="connector-log-sheets" class="flex flex-col gap-1 text-[11px] max-h-[80px] overflow-y-auto pr-1"></div>
         </div>
       </div>
 
@@ -490,19 +564,19 @@
   <script>
     // Core Agent OS System State (Organized by active workspace Directory)
     let workspaces = {
-      "Newsletter Directory": {
+      "Inhalants Directory": {
         agents: {},
         taskQueue: [],
         positions: { 'User': { x: 50, y: 15 }, 'GDrive': { x: 85, y: 18 } },
         completedTasksCount: 0,
         mockGDriveFiles: [
-          { name: "campaign_targets.txt", size: "340 B", content: "Target: Tech professionals aged 25-45 experiencing elevated stress loads.\nGoal: Integrate productivity flows with micro-breaks and task planning templates to increase long-term user retention.", updated: "2 mins ago" },
-          { name: "industry_trends.md", size: "1.1 KB", content: "# Tech trends inside the 2026 Ecosystem\n1. Spawning dynamic micro-agents is standard operating practice.\n2. Autonomous loop schedulers are replacing linear pipelines.\n3. Real-time observability on messaging lines minimizes computational loops.", updated: "5 mins ago" }
+          { name: "upcoming_shows.txt", size: "310 B", content: "Venue outreach targets: local all-ages rooms and DIY spaces within a 3-hour drive.\nGoal: Book 1-2 shows per month without conflicting with everyone's day jobs.", updated: "2 mins ago" },
+          { name: "merch_and_grants.md", size: "1.0 KB", content: "# Inhalants Sustainability Notes\n1. Track grant deadlines for local arts/music funding.\n2. Merch should be low-overhead (stickers, shirts) until cash flow is proven.\n3. Keep a running list of tasks so nothing depends on one person's memory.", updated: "5 mins ago" }
         ]
       }
     };
-    
-    let currentWorkspace = "Newsletter Directory";
+
+    let currentWorkspace = "Inhalants Directory";
 
     // Active reference shortcut pointers
     let agents = {};
@@ -562,24 +636,24 @@
 
     // Pre-made workspace templates to immediately prove dynamic creations
     const presets = {
-      news: {
+      band: {
         agents: {
-          "Director": {
-            persona: "You are the central Planning Agent. Your job is to draft a newsletter topic. You must spawn secondary agents to critique and publish it.\n\nYOU HAVE AGENT CONTROL TOOLS via text commands:\n- To SPAWN an agent: Use tag [CREATE_AGENT: name=\"AgentName\", persona=\"Persona detail...\"]\n- To TRIGGER/DELEGATE a task: Use tag [TRIGGER_AGENT: name=\"AgentName\", task=\"Instructions...\"]\n- To SCHEDULE repeating updates: Use tag [SCHEDULE_LOOP: name=\"AgentName\", interval_sec=\"10\", limit=\"2\", task=\"Task detail...\"]\n\nWhen a topic is given, SPAWN an Editor agent to critique, and a Designer to format. Then TRIGGER them.",
+          "Manager": {
+            persona: "You are the chief operating / project manager for the band Inhalants. Goal: build Inhalants into a sustainable band that can keep day jobs while consistently releasing music, playing shows, selling merch, securing grants/funding, and staying organized without everything depending on one person. You must spawn secondary agents to help execute.\n\nYOU HAVE AGENT CONTROL TOOLS via text commands:\n- To SPAWN an agent: Use tag [CREATE_AGENT: name=\"AgentName\", persona=\"Persona detail...\"]\n- To TRIGGER/DELEGATE a task: Use tag [TRIGGER_AGENT: name=\"AgentName\", task=\"Instructions...\"]\n- To SCHEDULE repeating updates: Use tag [SCHEDULE_LOOP: name=\"AgentName\", interval_sec=\"10\", limit=\"2\", task=\"Task detail...\"]\n\nWhen given a goal, SPAWN a Booking agent to chase shows/venues, and a Merch agent to handle merch and grant funding. Then TRIGGER them with concrete next steps.",
             theme: "brand"
           },
-          "Editor": {
-            persona: "You analyze draft summaries for intellectual accuracy, style inconsistencies, and logical flaws. Give constructive bullet critiques, then TRIGGER 'Designer' to assemble.",
+          "Booking": {
+            persona: "You handle show booking and venue outreach for Inhalants — finding venues, tracking availability, and drafting outreach messages. Report back concrete next steps, then TRIGGER 'Merch' if there's a merch or funding angle tied to an upcoming show.",
             theme: "amber"
           },
-          "Designer": {
-            persona: "You turn raw research and criticism into clean markdown structures with beautiful dividers and titles. Do not create or trigger further, just wrap the formatted output elegantly.",
+          "Merch": {
+            persona: "You handle merch planning and grant/funding research for Inhalants — favoring low-overhead merch until cash flow is proven, and tracking relevant local arts/music grant deadlines. Do not create or trigger further, just report clean, actionable findings.",
             theme: "emerald"
           }
         },
         initialTask: {
-          target: "Director",
-          prompt: "Draft an exciting short overview on commercial space exploration advances. Spawn other agents to clean up and finalize."
+          target: "Manager",
+          prompt: "Identify this week's single highest-leverage action to grow Inhalants sustainably. Spawn Booking and Merch agents to help execute, then trigger them with concrete next steps."
         }
       },
       code: {
@@ -655,7 +729,7 @@
       try { allowAutonomousSend = localStorage.getItem('agentlooper_autosend') === '1'; } catch (e) { /* storage disabled */ }
       const bootSteps = [
         () => lucide.createIcons(),
-        () => loadWorkspaceState(currentWorkspace, restored ? null : 'news'),
+        () => loadWorkspaceState(currentWorkspace, restored ? null : 'band'),
         () => rebuildWorkspaceDropdown(),
         () => wireDelegatedClickHandlers(),
         () => wireGlobalKeyHandlers(),
@@ -727,7 +801,7 @@
       }
     }
 
-    function loadWorkspaceState(workspaceName, presetFallback = 'news') {
+    function loadWorkspaceState(workspaceName, presetFallback = 'band') {
       let state = workspaces[workspaceName];
       if (!state) {
         // Create new directory entry
@@ -997,23 +1071,24 @@ Your output must be purely JSON, matching this schema:
     }
 
     // Dynamic Tab Switching inside Left Sidebar
+    const LEFT_TABS = {
+      agents: { btn: 'tab-btn-agents', panel: 'tab-panel-agents' },
+      gdrive: { btn: 'tab-btn-gdrive', panel: 'tab-panel-gdrive' },
+      connectors: { btn: 'tab-btn-connectors', panel: 'tab-panel-connectors' }
+    };
     function switchLeftTab(tabId) {
-      const btnAgents = document.getElementById('tab-btn-agents');
-      const btnGDrive = document.getElementById('tab-btn-gdrive');
-      const panelAgents = document.getElementById('tab-panel-agents');
-      const panelGDrive = document.getElementById('tab-panel-gdrive');
-
-      if (tabId === 'agents') {
-        btnAgents.className = "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-slate-800 text-slate-100";
-        btnGDrive.className = "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
-        panelAgents.classList.remove('hidden');
-        panelGDrive.classList.add('hidden');
-      } else {
-        btnGDrive.className = "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-slate-800 text-slate-100";
-        btnAgents.className = "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
-        panelGDrive.classList.remove('hidden');
-        panelAgents.classList.add('hidden');
-      }
+      Object.entries(LEFT_TABS).forEach(([id, refs]) => {
+        const btn = document.getElementById(refs.btn);
+        const panel = document.getElementById(refs.panel);
+        const active = id === tabId;
+        if (btn) {
+          btn.className = active
+            ? "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-slate-800 text-slate-100"
+            : "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+        }
+        if (panel) panel.classList.toggle('hidden', !active);
+      });
+      if (tabId === 'connectors') syncConnectorsUI();
     }
 
     // Kick off a single Google OAuth consent covering both Drive and Gemini (cloud-platform) scopes.
@@ -1090,6 +1165,9 @@ Your output must be purely JSON, matching this schema:
             realGDriveAuthed = true;
             gDriveMode = 'real';
             await setupRealDriveWorkspaceFolder();
+            refreshGmailConnector();
+            refreshCalendarConnector();
+            refreshSheetsConnector();
           } catch (err) {
             console.error("GAPI init error after Google sign-in:", err);
             showToast("Signed in, but failed to initialize the Drive client.", "alert-triangle", "error");
@@ -1154,6 +1232,7 @@ Your output must be purely JSON, matching this schema:
       const sendCb = document.getElementById('allow-autonomous-send');
       if (sendCb) sendCb.checked = allowAutonomousSend;
 
+      syncConnectorsUI();
       lucide.createIcons();
     }
 
@@ -1949,9 +2028,12 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         }
         try {
           await gmailComposeTool(sourceAgentName, to, subject, body, forceDraft);
+          logConnectorActivity('gmail', `${sourceAgentName}: ${forceDraft || !allowAutonomousSend ? 'drafted' : 'sent'} mail to ${to}`);
+          refreshGmailConnector();
         } catch (err) {
           console.error("Gmail tool error:", err);
           logConsoleEvent("SYSTEM", `❌ Gmail Error: could not ${forceDraft || !allowAutonomousSend ? 'draft' : 'send'} email to ${to}.`, "error");
+          logConnectorActivity('gmail', `${sourceAgentName}: failed to email ${to}`, false);
         }
       }
 
@@ -1968,9 +2050,12 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         }
         try {
           await calendarCreateTool(sourceAgentName, title, start, end, details);
+          logConnectorActivity('calendar', `${sourceAgentName}: created "${title}"`);
+          refreshCalendarConnector();
         } catch (err) {
           console.error("Calendar create error:", err);
           logConsoleEvent("SYSTEM", `❌ Calendar Error: could not create event "${title}". Check that the start time is a valid ISO datetime.`, "error");
+          logConnectorActivity('calendar', `${sourceAgentName}: failed to create "${title}"`, false);
         }
       }
 
@@ -1984,9 +2069,11 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         }
         try {
           await calendarListTool(sourceAgentName, max);
+          logConnectorActivity('calendar', `${sourceAgentName}: listed ${max} upcoming events`);
         } catch (err) {
           console.error("Calendar list error:", err);
           logConsoleEvent("SYSTEM", `❌ Calendar Error: could not list upcoming events.`, "error");
+          logConnectorActivity('calendar', `${sourceAgentName}: failed to list events`, false);
         }
       }
 
@@ -2001,9 +2088,12 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         }
         try {
           await sheetWriteTool(sourceAgentName, sheetName, valuesRaw);
+          logConnectorActivity('sheets', `${sourceAgentName}: wrote to "${sheetName}"`);
+          refreshSheetsConnector();
         } catch (err) {
           console.error("Sheet write error:", err);
           logConsoleEvent("SYSTEM", `❌ Sheets Error: could not write to spreadsheet "${sheetName}".`, "error");
+          logConnectorActivity('sheets', `${sourceAgentName}: failed to write "${sheetName}"`, false);
         }
       }
 
@@ -2017,9 +2107,11 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         }
         try {
           await sheetReadTool(sourceAgentName, sheetName);
+          logConnectorActivity('sheets', `${sourceAgentName}: read "${sheetName}"`);
         } catch (err) {
           console.error("Sheet read error:", err);
           logConsoleEvent("SYSTEM", `❌ Sheets Error: could not read spreadsheet "${sheetName}".`, "error");
+          logConnectorActivity('sheets', `${sourceAgentName}: failed to read "${sheetName}"`, false);
         }
       }
 
@@ -2070,7 +2162,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
           googleAuth.accessToken = null;
           sessionStorage.removeItem('agentos_google_token');
           updateGoogleAuthUI();
-          throw new Error(`Google session expired or lacks access (HTTP ${response.status})${detail}. Sign in with Google again (and confirm the Generative Language API is enabled and accessible on your project).`);
+          throw new Error(`Google session expired or lacks access (HTTP ${response.status})${detail}. Sign in with Google again (and confirm the Gemini API is enabled and accessible on your project).`);
         }
 
         // Retry only on rate-limits (429) and transient server errors (5xx),
@@ -2645,6 +2737,115 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
     // The Workspace tools (Gmail / Calendar / Sheets) need a live Google session + gapi client.
     function googleToolsReady() {
       return !!(googleAuth.accessToken && realGDriveAuthed && typeof gapi !== 'undefined' && gapi.client);
+    }
+
+    // --- Connectors panel: per-tool activity log + live status, so Gmail/Calendar/Sheets
+    // are visible in the UI instead of only existing as invisible agent-side text tags.
+    let connectorActivity = { gmail: [], calendar: [], sheets: [] };
+
+    function logConnectorActivity(kind, text, ok = true) {
+      const list = connectorActivity[kind];
+      if (!list) return;
+      list.unshift({ text, ok });
+      if (list.length > 5) list.length = 5;
+      renderConnectorLog(kind);
+    }
+
+    function renderConnectorLog(kind) {
+      const el = document.getElementById(`connector-log-${kind}`);
+      if (!el) return;
+      const list = connectorActivity[kind];
+      el.innerHTML = list.length
+        ? list.map(e => `<p class="${e.ok ? 'text-slate-400' : 'text-rose-400'} truncate">${e.ok ? '•' : '✕'} ${escapeHtml(e.text)}</p>`).join('')
+        : '<p class="italic text-slate-500">No activity yet.</p>';
+    }
+
+    // Keeps the Connectors tab (status pills, badge dot, activity logs) in sync with auth
+    // state. Cheap and DOM-only — called from updateGoogleAuthUI, so it never goes stale.
+    function syncConnectorsUI() {
+      const ready = googleToolsReady();
+      ['gmail', 'calendar', 'sheets'].forEach(kind => {
+        const pill = document.getElementById(`connector-status-${kind}`);
+        if (pill) {
+          pill.textContent = ready ? 'Connected' : 'Not Connected';
+          pill.className = ready
+            ? "text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded-full font-bold"
+            : "text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-full font-bold";
+        }
+        renderConnectorLog(kind);
+      });
+
+      const badge = document.getElementById('connectors-badge');
+      if (badge) badge.className = ready ? "w-2 h-2 rounded-full bg-emerald-400 animate-pulse" : "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
+
+      if (!ready) {
+        const draftEl = document.getElementById('gmail-draft-count');
+        if (draftEl) draftEl.textContent = 'Drafts: —';
+        const evEl = document.getElementById('connector-events-calendar');
+        if (evEl) evEl.innerHTML = '<p class="italic text-slate-500">Sign in to load events.</p>';
+        const shEl = document.getElementById('connector-sheets-list');
+        if (shEl) shEl.innerHTML = '<p class="italic text-slate-500">Sign in to load spreadsheets.</p>';
+      }
+    }
+
+    // --- Gmail: live draft count, straight from the account (not just our own activity log) ---
+    async function refreshGmailConnector() {
+      const el = document.getElementById('gmail-draft-count');
+      if (!googleToolsReady()) { if (el) el.textContent = 'Drafts: —'; return; }
+      if (el) el.textContent = 'Drafts: …';
+      try {
+        const res = await gapi.client.request({ path: '/gmail/v1/users/me/drafts', method: 'GET', params: { maxResults: 25 } });
+        const count = (res.result.drafts || []).length;
+        const more = (res.result.resultSizeEstimate || 0) > count;
+        if (el) el.textContent = `Drafts: ${count}${more ? '+' : ''}`;
+      } catch (err) {
+        console.error('Gmail drafts refresh error:', err);
+        if (el) el.textContent = 'Drafts: error';
+      }
+    }
+
+    // --- Calendar: live upcoming events, rendered straight into the connector card ---
+    async function refreshCalendarConnector() {
+      const el = document.getElementById('connector-events-calendar');
+      if (!el) return;
+      if (!googleToolsReady()) { el.innerHTML = '<p class="italic text-slate-500">Sign in to load events.</p>'; return; }
+      el.innerHTML = '<p class="italic text-slate-500">Loading…</p>';
+      try {
+        const res = await gapi.client.request({
+          path: '/calendar/v3/calendars/primary/events',
+          method: 'GET',
+          params: { timeMin: new Date().toISOString(), maxResults: 5, singleEvents: true, orderBy: 'startTime' }
+        });
+        const items = res.result.items || [];
+        el.innerHTML = items.length
+          ? items.map(e => `<p class="truncate">• ${escapeHtml(e.summary || '(no title)')} — ${escapeHtml(e.start?.dateTime || e.start?.date || '')}</p>`).join('')
+          : '<p class="italic text-slate-500">No upcoming events.</p>';
+      } catch (err) {
+        console.error('Calendar events refresh error:', err);
+        el.innerHTML = '<p class="italic text-rose-400">Failed to load events.</p>';
+      }
+    }
+
+    // --- Sheets: live list of spreadsheets sitting in the Drive workspace folder ---
+    async function refreshSheetsConnector() {
+      const el = document.getElementById('connector-sheets-list');
+      if (!el) return;
+      if (!googleToolsReady()) { el.innerHTML = '<p class="italic text-slate-500">Sign in to load spreadsheets.</p>'; return; }
+      el.innerHTML = '<p class="italic text-slate-500">Loading…</p>';
+      try {
+        const res = await gapi.client.drive.files.list({
+          q: `${workspaceFolderId ? `'${workspaceFolderId}' in parents and ` : ''}mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+          fields: 'files(id, name, webViewLink)',
+          spaces: 'drive'
+        });
+        const files = res.result.files || [];
+        el.innerHTML = files.length
+          ? files.map(f => `<a href="${escapeHtml(f.webViewLink || '#')}" target="_blank" rel="noopener noreferrer" class="truncate text-emerald-300 hover:underline block">• ${escapeHtml(f.name)}</a>`).join('')
+          : '<p class="italic text-slate-500">No spreadsheets yet.</p>';
+      } catch (err) {
+        console.error('Sheets list refresh error:', err);
+        el.innerHTML = '<p class="italic text-rose-400">Failed to load spreadsheets.</p>';
+      }
     }
 
     // Push a follow-up task that feeds tool output back to the requesting agent (like READ_GDRIVE).
