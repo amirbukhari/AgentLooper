@@ -21,12 +21,29 @@ the whole system before connecting any Google account.
   - `[TRIGGER_AGENT: name="...", task="..."]` — delegate a task
   - `[SCHEDULE_LOOP: name="...", interval_sec="10", limit="2", task="..."]` — run a
     task on a recurring loop
+- **Real Google Workspace tools.** Once signed in, agents can act on your account —
+  not just simulate. Available as inline tags alongside `[WRITE_GDRIVE]`/`[READ_GDRIVE]`:
+  - `[SEND_GMAIL: to="...", subject="...", body="..."]` — send an email
+  - `[DRAFT_GMAIL: to="...", subject="...", body="..."]` — save a draft for you to review
+  - `[CREATE_EVENT: title="...", start="ISO", end="ISO", details="..."]` — add a calendar event
+  - `[LIST_EVENTS: max="5"]` — read upcoming events back to the agent
+  - `[WRITE_SHEET: name="...", values="a,b ; c,d"]` / `[READ_SHEET: name="..."]` — read/write a spreadsheet
+- **Human-in-the-loop email gate.** Agents choose per email whether to send or draft, but a
+  master **"Allow autonomous email sending"** switch (default **off**) is the final say:
+  while it's off, even `[SEND_GMAIL]` is saved as a Gmail draft, so nothing leaves your
+  account until you opt in.
 - **Multiple workspaces ("Directories").** Isolate independent agent ecosystems and
-  switch between them from the header.
+  switch between them from the header. Every directory (its agents, task queue, and
+  sandbox files) is **persisted to `localStorage`**, so a page reload restores your work.
+- **Runaway-loop safety caps.** Because agents can spawn, trigger, and schedule each
+  other, built-in limits (max agents, max queued tasks, and clamped loop
+  interval/iterations) stop a self-referential chain from spawning unbounded agents and
+  burning your Gemini quota.
 - **Live scheduler.** A 1-second clock loop drives triggers, scheduled loops, and
   the task queue, with real-time observability on the agent message lines.
-- **Bring-your-own Google account.** A single OAuth consent covers Google Drive
-  (`drive.file`) and Gemini (`cloud-platform`). Nothing is proxied through a server.
+- **Bring-your-own Google account.** A single OAuth consent covers Gemini
+  (`cloud-platform`), Drive (`drive.file`), Gmail (`gmail.compose`), Calendar
+  (`calendar.events`), and Sheets (`spreadsheets`). Nothing is proxied through a server.
 - **Sandbox vs. real Drive.** Start against mock files; flip to real Google Drive
   once signed in.
 - **Starter presets.** Newsletter and code-generation agent teams are built in.
@@ -68,9 +85,13 @@ Then, in the [Google Cloud Console](https://console.cloud.google.com/):
 1. Create an OAuth 2.0 **Web application** client ID.
 2. Add your origin(s) (e.g. `http://localhost:8080` and your Pages URL) to
    **Authorized JavaScript origins**.
-3. Enable the **Generative Language API** (Gemini) and the **Google Drive API**.
-4. Add the required scopes to the OAuth consent screen:
-   `drive.file`, `cloud-platform`, `userinfo.email`.
+3. Enable the APIs the tools use: **Generative Language API** (Gemini), **Google Drive
+   API**, **Gmail API**, **Google Calendar API**, and **Google Sheets API**.
+4. Add the required scopes to the OAuth consent screen: `cloud-platform`, `drive.file`,
+   `userinfo.email`, `gmail.compose`, `calendar.events`, `spreadsheets`.
+
+> The Gmail, Calendar, and Sheets tools only appear to agents once a real Google account
+> is connected — in sandbox mode agents only see the Drive tools.
 
 The Gemini model is set inline (currently `gemini-2.5-flash-preview-09-2025`); search
 for `generativelanguage.googleapis.com` in `index.html` to change it.

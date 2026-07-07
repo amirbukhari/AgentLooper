@@ -240,6 +240,17 @@
               </div>
               <button onclick="signOutGoogle()" class="text-[11px] text-slate-500 hover:text-rose-400 font-semibold shrink-0">Sign Out</button>
             </div>
+
+            <!-- Master safety gate: agents can draft mail freely, but only send when this is on -->
+            <label for="allow-autonomous-send" class="flex items-start justify-between gap-3 bg-slate-950 border border-amber-900/40 rounded-xl px-3 py-2.5 cursor-pointer">
+              <div class="min-w-0">
+                <span class="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                  <i data-lucide="send" class="w-3.5 h-3.5"></i> Allow autonomous email sending
+                </span>
+                <span class="text-[11px] text-slate-400 block mt-0.5 leading-snug">Off: agents' <code class="text-slate-300">[SEND_GMAIL]</code> is saved as a draft instead. On: agents can send mail directly from your account.</span>
+              </div>
+              <input type="checkbox" id="allow-autonomous-send" onchange="setAutonomousSend(this.checked)" class="mt-0.5 h-4 w-4 shrink-0 accent-amber-500 cursor-pointer">
+            </label>
           </div>
         </div>
 
@@ -515,6 +526,7 @@
     // Only the OAuth client_secret would need to stay off the client; this flow never uses one.
     const GOOGLE_OAUTH_CLIENT_ID = '513516542701-8g2krk19motoiqstqnu0mb36vkgvkshu.apps.googleusercontent.com';
     const GOOGLE_CLOUD_PROJECT_ID = 'smart-return-151804';
+    const DRIVE_WORKSPACE_FOLDER_NAME = 'INHALANTS ROBOT PROJECT MANAGEMENT';
 
     let googleAuth = {
       accessToken: null,
@@ -522,12 +534,31 @@
       tokenClient: null
     };
 
+    // Master safety gate for outbound email. While OFF, an agent's [SEND_GMAIL] is
+    // downgraded to a draft, so nothing leaves the account without the user opting in.
+    // Agents still choose per-email whether to draft or send (via which tag they emit);
+    // this switch is the human's final say on top of that choice. Persisted per browser.
+    let allowAutonomousSend = false;
+
     // Global ticking engine config (1-second clock loop)
     let isTicking = true;
     let clockIntervalId = null;
 
     // Toast Control timer helper
     let toastTimeoutId = null;
+
+    // Safety limits — autonomous agents can spawn/trigger/loop each other, so these caps
+    // stop a runaway chain (or an "A triggers B triggers A" cycle) from spawning unbounded
+    // agents and burning the signed-in user's real Gemini quota.
+    const MAX_AGENTS = 40;              // max agents per directory
+    const MAX_QUEUE = 60;               // max tasks in the scheduler at once
+    const MIN_LOOP_INTERVAL_SEC = 5;    // floor for scheduled-loop cadence
+    const MAX_LOOP_INTERVAL_SEC = 3600; // ceiling for scheduled-loop cadence
+    const MAX_LOOP_ITERATIONS = 20;     // ceiling for scheduled-loop repeats
+    const MAX_CONSOLE_BLOCKS = 200;     // trim the console feed to avoid unbounded DOM growth
+
+    // localStorage key for persisting all directories across reloads
+    const PERSIST_KEY = 'agentlooper_state_v1';
 
     // Pre-made workspace templates to immediately prove dynamic creations
     const presets = {
@@ -619,18 +650,36 @@
     window.onload = function() {
       // Each step runs independently — a failure in one (e.g. a blocked CDN icon
       // script) must not prevent the rest of the UI, especially Google Sign-In, from wiring up.
+      // Restore saved directories if present; otherwise seed the default preset.
+      const restored = loadPersistedState();
+      try { allowAutonomousSend = localStorage.getItem('agentlooper_autosend') === '1'; } catch (e) { /* storage disabled */ }
       const bootSteps = [
         () => lucide.createIcons(),
-        () => loadWorkspaceState(currentWorkspace, 'news'),
+        () => loadWorkspaceState(currentWorkspace, restored ? null : 'news'),
         () => rebuildWorkspaceDropdown(),
         () => wireDelegatedClickHandlers(),
+        () => wireGlobalKeyHandlers(),
         () => restoreGoogleSession(),
         () => startGlobalScheduler()
       ];
       bootSteps.forEach(step => {
         try { step(); } catch (err) { console.error("AgentLooper boot step failed:", err); }
       });
+
+      // Persist directories when the tab is closed or refreshed.
+      window.addEventListener('beforeunload', persistState);
     };
+
+    // Close the topmost open modal on Escape.
+    function wireGlobalKeyHandlers() {
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const fileModal = document.getElementById('file-inspect-modal');
+        const agentModal = document.getElementById('agent-inspect-modal');
+        if (fileModal && !fileModal.classList.contains('hidden')) { closeFileInspectModal(); return; }
+        if (agentModal && !agentModal.classList.contains('hidden')) { closeInspectModal(); }
+      });
+    }
 
     // Save and load workspace directory mechanics
     function saveCurrentWorkspaceState() {
@@ -644,45 +693,78 @@
       };
     }
 
+    // Persist every directory (agents, queues, sandbox files) so a page reload doesn't
+    // wipe the workspaces the user built. Google tokens are intentionally NOT stored here.
+    function persistState() {
+      try {
+        saveCurrentWorkspaceState();
+        localStorage.setItem(PERSIST_KEY, JSON.stringify({ workspaces, currentWorkspace }));
+      } catch (err) {
+        console.error("Failed to persist AgentLooper state:", err);
+      }
+    }
+
+    // Rehydrate saved directories on boot. Returns true if a valid snapshot was restored.
+    function loadPersistedState() {
+      try {
+        const raw = localStorage.getItem(PERSIST_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed.workspaces !== 'object' || !Object.keys(parsed.workspaces).length) return false;
+        workspaces = parsed.workspaces;
+        // A task saved mid-execution (tab closed while running) would be stuck 'processing'
+        // and never re-run, since the tick only picks up 'pending' tasks. Reset them.
+        Object.values(workspaces).forEach(ws => {
+          (ws.taskQueue || []).forEach(t => { if (t.status === 'processing') t.status = 'pending'; });
+        });
+        currentWorkspace = (parsed.currentWorkspace && workspaces[parsed.currentWorkspace])
+          ? parsed.currentWorkspace
+          : Object.keys(workspaces)[0];
+        return true;
+      } catch (err) {
+        console.error("Failed to restore AgentLooper state:", err);
+        return false;
+      }
+    }
+
     function loadWorkspaceState(workspaceName, presetFallback = 'news') {
-      const state = workspaces[workspaceName];
-      if (state) {
-        agents = state.agents;
-        taskQueue = state.taskQueue;
-        positions = state.positions;
-        completedTasksCount = state.completedTasksCount;
-        mockGDriveFiles = state.mockGDriveFiles;
-      } else {
+      let state = workspaces[workspaceName];
+      if (!state) {
         // Create new directory entry
-        workspaces[workspaceName] = {
+        state = {
           agents: {},
           taskQueue: [],
           positions: { 'User': { x: 50, y: 15 }, 'GDrive': { x: 85, y: 18 } },
           completedTasksCount: 0,
           mockGDriveFiles: []
         };
-        agents = workspaces[workspaceName].agents;
-        taskQueue = workspaces[workspaceName].taskQueue;
-        positions = workspaces[workspaceName].positions;
-        completedTasksCount = workspaces[workspaceName].completedTasksCount;
-        mockGDriveFiles = workspaces[workspaceName].mockGDriveFiles;
-
-        if (presetFallback) {
-          // Setup with a preset automatically if requested
-          const config = presets[presetFallback];
-          Object.entries(config.agents).forEach(([name, details]) => {
-            agents[name] = {
-              id: name,
-              persona: details.persona,
-              theme: details.theme || 'brand',
-              memory: [`Initialized into directory via preset.`],
-              createdTime: new Date()
-            };
-          });
-          document.getElementById('task-prompt').value = config.initialTask.prompt;
-        }
+        workspaces[workspaceName] = state;
       }
-      
+
+      // Seed a starter preset when the directory has no agents yet. This covers both a
+      // brand-new directory and the pre-defined-but-empty boot workspace (which previously
+      // took the "state exists" path and loaded zero agents despite the "3 Active" label).
+      if (presetFallback && presets[presetFallback] && Object.keys(state.agents).length === 0) {
+        const config = presets[presetFallback];
+        Object.entries(config.agents).forEach(([name, details]) => {
+          state.agents[name] = {
+            id: name,
+            persona: details.persona,
+            theme: details.theme || 'brand',
+            memory: [`Initialized into directory via preset.`],
+            createdTime: new Date()
+          };
+        });
+        const promptEl = document.getElementById('task-prompt');
+        if (promptEl && config.initialTask) promptEl.value = config.initialTask.prompt;
+      }
+
+      agents = state.agents;
+      taskQueue = state.taskQueue;
+      positions = state.positions;
+      completedTasksCount = state.completedTasksCount;
+      mockGDriveFiles = state.mockGDriveFiles;
+
       currentWorkspace = workspaceName;
       calculateNodePositions();
       
@@ -708,6 +790,7 @@
       loadWorkspaceState(workspaceName, null);
       logConsoleEvent("SYSTEM", `Swapped directories. Now observing active Workspace: [${workspaceName}]`, "success");
       showToast(`Directory Swapped to: ${workspaceName}`, "folder");
+      persistState();
     }
 
     function createNewWorkspacePrompt() {
@@ -736,6 +819,7 @@
 
       logConsoleEvent("SYSTEM", `Created brand new directory pipeline: [${cleanName}]`, "success");
       showToast(`Created Workspace Directory: ${cleanName}`, "folder-plus");
+      persistState();
     }
 
     function rebuildWorkspaceDropdown() {
@@ -825,7 +909,12 @@ Your output must be purely JSON, matching this schema:
 
         // Inject generated agents WITHOUT deleting previous manual ones
         ecosystem.agents.forEach(agent => {
-          const cleanName = agent.name.replace(/[^a-zA-Z0-9]/g, ""); // Keep alphanumeric
+          const cleanName = (agent.name || '').replace(/[^a-zA-Z0-9]/g, ""); // Keep alphanumeric
+          if (!cleanName) return;
+          if (!agents[cleanName] && Object.keys(agents).length >= MAX_AGENTS) {
+            logConsoleEvent("SYSTEM", `⛔ Agent cap (${MAX_AGENTS}) reached — skipping generated agent '${cleanName}'.`, "error");
+            return;
+          }
           agents[cleanName] = {
             id: cleanName,
             persona: agent.persona,
@@ -842,12 +931,16 @@ Your output must be purely JSON, matching this schema:
         rebuildTargetSelectUI();
         redrawVisualGraph();
 
-        // Load the initial recommended starter task into the prompt panel
+        // Load the initial recommended starter task into the prompt panel. The target must be
+        // sanitized the same way agent names are, or the <select> value won't match any option.
         document.getElementById('task-prompt').value = ecosystem.initialTask.prompt;
-        document.getElementById('task-target-agent').value = ecosystem.initialTask.targetAgent;
+        const rawTarget = (ecosystem.initialTask.targetAgent || '').replace(/[^a-zA-Z0-9]/g, "");
+        const targetAgentName = agents[rawTarget] ? rawTarget : Object.keys(agents)[0];
+        if (targetAgentName) document.getElementById('task-target-agent').value = targetAgentName;
 
         showToast("Successfully deployed custom dynamic ecosystem!", "check-circle");
         document.getElementById('ai-architect-goal').value = ""; // Clear
+        persistState();
       } catch (err) {
         console.error("Architect spawning error:", err);
         logConsoleEvent("SYSTEM", `Failed to generate architecture: ${err.message}`, "error");
@@ -900,6 +993,7 @@ Your output must be purely JSON, matching this schema:
       document.getElementById('task-target-agent').value = config.initialTask.target;
       
       showToast(`Loaded preset environment: ${presetName}`, "check-circle");
+      persistState();
     }
 
     // Dynamic Tab Switching inside Left Sidebar
@@ -933,7 +1027,14 @@ Your output must be purely JSON, matching this schema:
 
       googleAuth.tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_OAUTH_CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email',
+        scope: [
+          'https://www.googleapis.com/auth/drive.file',
+          'https://www.googleapis.com/auth/cloud-platform',
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/gmail.compose',   // create drafts AND send mail
+          'https://www.googleapis.com/auth/calendar.events',
+          'https://www.googleapis.com/auth/spreadsheets'
+        ].join(' '),
         callback: async (tokenResponse) => {
           if (tokenResponse.error) {
             console.error("Google sign-in error:", tokenResponse);
@@ -954,8 +1055,20 @@ Your output must be purely JSON, matching this schema:
       googleAuth.tokenClient.requestAccessToken({ prompt: 'consent' });
     }
 
-    // Fetch profile info, wire the token into gapi for live Drive access, and refresh UI
-    async function finalizeGoogleSignIn() {
+    // Wait for Google's async-deferred api.js to define `gapi` before using it. On a fresh
+    // reload, restoreGoogleSession() can run before that script has finished loading.
+    function whenGapiReady(callback, attemptsLeft = 40) {
+      if (typeof gapi !== 'undefined') { callback(); return; }
+      if (attemptsLeft <= 0) {
+        console.error("Google API script (gapi) never became available.");
+        return;
+      }
+      setTimeout(() => whenGapiReady(callback, attemptsLeft - 1), 150);
+    }
+
+    // Fetch profile info, wire the token into gapi for live Drive access, and refresh UI.
+    // `silent` suppresses the success toast/log when restoring an existing session on reload.
+    async function finalizeGoogleSignIn(silent = false) {
       try {
         const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { 'Authorization': `Bearer ${googleAuth.accessToken}` }
@@ -968,25 +1081,29 @@ Your output must be purely JSON, matching this schema:
         console.error("Failed to fetch Google profile info:", err);
       }
 
-      gapi.load('client', async () => {
-        try {
-          await gapi.client.init({ discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
-          gapi.client.setToken({ access_token: googleAuth.accessToken });
-          realGDriveInited = true;
-          realGDriveAuthed = true;
-          gDriveMode = 'real';
-          await setupRealDriveWorkspaceFolder();
-        } catch (err) {
-          console.error("GAPI init error after Google sign-in:", err);
-          showToast("Signed in, but failed to initialize the Drive client.", "alert-triangle", "error");
-        }
-        updateGoogleAuthUI();
-        syncGDriveUI();
-        lucide.createIcons();
+      whenGapiReady(() => {
+        gapi.load('client', async () => {
+          try {
+            await gapi.client.init({ discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+            gapi.client.setToken({ access_token: googleAuth.accessToken });
+            realGDriveInited = true;
+            realGDriveAuthed = true;
+            gDriveMode = 'real';
+            await setupRealDriveWorkspaceFolder();
+          } catch (err) {
+            console.error("GAPI init error after Google sign-in:", err);
+            showToast("Signed in, but failed to initialize the Drive client.", "alert-triangle", "error");
+          }
+          updateGoogleAuthUI();
+          syncGDriveUI();
+          lucide.createIcons();
+        });
       });
 
-      showToast("Signed in with Google — Drive and Gemini are now connected.", "check-circle");
-      logConsoleEvent("SYSTEM", `Google sign-in successful${googleAuth.email ? ' as ' + googleAuth.email : ''}. Live Drive and your own Gemini quota are now active.`, "success");
+      if (!silent) {
+        showToast("Signed in with Google — Drive and Gemini are now connected.", "check-circle");
+        logConsoleEvent("SYSTEM", `Google sign-in successful${googleAuth.email ? ' as ' + googleAuth.email : ''}. Live Drive and your own Gemini quota are now active.`, "success");
+      }
       updateGoogleAuthUI();
     }
 
@@ -1034,6 +1151,9 @@ Your output must be purely JSON, matching this schema:
       const driveBadge = document.getElementById('gdrive-badge');
       if (driveBadge) driveBadge.className = isSignedIn ? "w-2 h-2 rounded-full bg-emerald-400 animate-pulse" : "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
 
+      const sendCb = document.getElementById('allow-autonomous-send');
+      if (sendCb) sendCb.checked = allowAutonomousSend;
+
       lucide.createIcons();
     }
 
@@ -1045,7 +1165,7 @@ Your output must be purely JSON, matching this schema:
         const parsed = JSON.parse(saved);
         if (parsed.expires_at && parsed.expires_at > Date.now() + 30000) {
           googleAuth.accessToken = parsed.access_token;
-          await finalizeGoogleSignIn();
+          await finalizeGoogleSignIn(true);
         } else {
           sessionStorage.removeItem('agentos_google_token');
           updateGoogleAuthUI();
@@ -1056,13 +1176,13 @@ Your output must be purely JSON, matching this schema:
       }
     }
 
-    // Scan drive or instantiate "AgentLooper Workspace" system directory
+    // Scan drive or instantiate the default workspace system directory
     async function setupRealDriveWorkspaceFolder() {
       if (!realGDriveAuthed) return;
       try {
-        logConsoleEvent("SYSTEM", "Querying GDrive directory for existing AgentLooper Workspace folder...", "info");
+        logConsoleEvent("SYSTEM", `Querying GDrive directory for existing '${DRIVE_WORKSPACE_FOLDER_NAME}' folder...`, "info");
         const response = await gapi.client.drive.files.list({
-          q: "name = 'AgentLooper Workspace' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+          q: `name = '${DRIVE_WORKSPACE_FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
           fields: 'files(id, name)',
           spaces: 'drive'
         });
@@ -1070,13 +1190,13 @@ Your output must be purely JSON, matching this schema:
         const files = response.result.files;
         if (files && files.length > 0) {
           workspaceFolderId = files[0].id;
-          logConsoleEvent("SYSTEM", `Existing folder 'AgentLooper Workspace' connected (ID: ${workspaceFolderId})`, "success");
+          logConsoleEvent("SYSTEM", `Existing folder '${DRIVE_WORKSPACE_FOLDER_NAME}' connected (ID: ${workspaceFolderId})`, "success");
         } else {
           // Instatitate a brand-new folder
-          logConsoleEvent("SYSTEM", "Creating fresh 'AgentLooper Workspace' directory in your Google Drive...", "info");
+          logConsoleEvent("SYSTEM", `Creating fresh '${DRIVE_WORKSPACE_FOLDER_NAME}' directory in your Google Drive...`, "info");
           const createResponse = await gapi.client.drive.files.create({
             resource: {
-              name: 'AgentLooper Workspace',
+              name: DRIVE_WORKSPACE_FOLDER_NAME,
               mimeType: 'application/vnd.google-apps.folder'
             },
             fields: 'id'
@@ -1194,7 +1314,8 @@ Your output must be purely JSON, matching this schema:
         document.getElementById('manual-file-name').value = "";
         document.getElementById('manual-file-content').value = "";
         syncGDriveUI();
-        
+        persistState();
+
         // Dynamic pulse on user node
         triggerVisualPulse('User', 'GDrive');
       } else {
@@ -1208,7 +1329,7 @@ Your output must be purely JSON, matching this schema:
           
           // Check if file exists inside directory folder first (for update vs create)
           const search = await gapi.client.drive.files.list({
-            q: `'${workspaceFolderId}' in parents and name = '${name}' and trashed = false`,
+            q: `'${workspaceFolderId}' in parents and name = '${escapeDriveQuery(name)}' and trashed = false`,
             fields: 'files(id)'
           });
 
@@ -1309,6 +1430,7 @@ Your output must be purely JSON, matching this schema:
         mockGDriveFiles = mockGDriveFiles.filter(f => f.name !== key);
         showToast(`Sandbox file [${key}] deleted.`, "trash-2", "amber");
         syncGDriveUI();
+        persistState();
       } else {
         if (!realGDriveAuthed) return;
         try {
@@ -1409,20 +1531,25 @@ Your output must be purely JSON, matching this schema:
         logConsoleEvent("SYSTEM", `Task failure on execution pipeline: ${err.message}`, "error");
       } finally {
         // Handle recurrence / iteration loop parameters
-        if (task.type === 'loop' && task.currentIteration < task.maxIterations && !task.aborted) {
+        if (task.aborted) {
+          // The task was cancelled mid-flight — cancelTask already removed it from the
+          // queue, so don't re-index/splice (that could delete an unrelated task) or count it.
+        } else if (task.type === 'loop' && task.currentIteration < task.maxIterations) {
           task.currentIteration++;
           task.status = 'pending';
           task.scheduledTime = Date.now() + (task.intervalSec * 1000);
           logConsoleEvent("SYSTEM", `Re-scheduling loop task iteration ${task.currentIteration}/${task.maxIterations} to target agent '${task.toAgent}' in ${task.intervalSec}s`, "info");
         } else {
           // Task completes completely
-          taskQueue.splice(taskQueue.indexOf(task), 1);
+          const idx = taskQueue.indexOf(task);
+          if (idx !== -1) taskQueue.splice(idx, 1);
           completedTasksCount++;
           document.getElementById('metric-steps').innerHTML = `<i data-lucide="hash" class="w-3.5 h-3.5 text-brand-400"></i> Steps Completed: ${completedTasksCount}`;
           lucide.createIcons();
         }
         processingTask = false;
         rebuildQueueUI();
+        persistState();
       }
     }
 
@@ -1461,6 +1588,28 @@ Your output must be purely JSON, matching this schema:
         }
       }
 
+      // Workspace action tools (Gmail / Calendar / Sheets) are only advertised when a live
+      // Google session is connected — otherwise agents would emit calls that always fail.
+      const workspaceToolsHelp = googleToolsReady() ? `
+6. SEND AN EMAIL from the connected Google account${allowAutonomousSend ? '' : ' (currently gated OFF — this will be saved as a DRAFT for the human to review)'}:
+[SEND_GMAIL: to="person@example.com", subject="Subject line", body="Full email body..."]
+
+7. DRAFT AN EMAIL (always saved as a draft for a human to review and send later — never sent automatically):
+[DRAFT_GMAIL: to="person@example.com", subject="Subject line", body="Full email body..."]
+
+8. CREATE A CALENDAR EVENT on the primary calendar (use ISO-8601 datetimes, e.g. 2026-07-10T14:00:00):
+[CREATE_EVENT: title="Event title", start="2026-07-10T14:00:00", end="2026-07-10T15:00:00", details="Optional description"]
+
+9. LIST UPCOMING CALENDAR EVENTS (results are fed back to you as a follow-up task):
+[LIST_EVENTS: max="5"]
+
+10. WRITE A GOOGLE SHEET (creates/overwrites a spreadsheet by name in your Drive workspace; rows separated by ';', cells by ','):
+[WRITE_SHEET: name="Report", values="Name,Score ; Alice,90 ; Bob,82"]
+
+11. READ A GOOGLE SHEET by name (contents are fed back to you as a follow-up task):
+[READ_SHEET: name="Report"]
+` : '';
+
       const systemInstructionWithOrchestrationHooks = `${targetAgent.persona}
 
 ---
@@ -1483,7 +1632,7 @@ The parser reads instructions with specific tag syntax:
 
 5. READ FILE FROM GOOGLE DRIVE (Retrieves context contents and schedules execution sequence):
 [READ_GDRIVE: filename="NameOfFile.txt"]
-
+${workspaceToolsHelp}
 Currently active available agents in directory environment: [${activeAgentNames}]
 Currently available files inside connected Google Drive Workspace directory: [${availableDriveFilesText}]
 
@@ -1526,6 +1675,10 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
           logConsoleEvent("SYSTEM", `Agent '${spawnedName}' already registered. Skipping dynamic spawn.`, "info");
           continue;
         }
+        if (Object.keys(agents).length >= MAX_AGENTS) {
+          logConsoleEvent("SYSTEM", `⛔ Agent cap (${MAX_AGENTS}) reached — refusing to spawn '${spawnedName}'. Retire agents to free capacity.`, "error");
+          continue;
+        }
 
         // Register dynamic agent
         const colorThemes = ["emerald", "rose", "cyan", "amber", "brand"];
@@ -1559,6 +1712,10 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
         if (!targetName) continue;
         if (!agents[targetName]) {
+          if (Object.keys(agents).length >= MAX_AGENTS) {
+            logConsoleEvent("SYSTEM", `⛔ Agent cap (${MAX_AGENTS}) reached — cannot auto-spawn clone for '${targetName}'. Trigger skipped.`, "error");
+            continue;
+          }
           logConsoleEvent("SYSTEM", `Cannot trigger '${targetName}': Agent does not exist. Spawning standard clone...`, "info");
           // Fallback spawn
           agents[targetName] = {
@@ -1572,6 +1729,11 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
           rebuildAgentListUI();
           rebuildTargetSelectUI();
           redrawVisualGraph();
+        }
+
+        if (taskQueue.length >= MAX_QUEUE) {
+          logConsoleEvent("SYSTEM", `⛔ Task queue is full (${MAX_QUEUE}) — dropping trigger to '${targetName}' to prevent a runaway loop.`, "error");
+          continue;
         }
 
         // Add task to scheduler immediately (Once style execution)
@@ -1593,13 +1755,17 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       const loopRegex = /\[SCHEDULE_LOOP:\s*name="([^"]+)",\s*interval_sec="([^"]+)",\s*limit="([^"]+)",\s*task="([^"]+)"\]/gi;
       while ((match = loopRegex.exec(text)) !== null) {
         const targetName = match[1].trim().replace(/[^a-zA-Z0-9]/g, "");
-        const intervalSec = parseInt(match[2].trim()) || 10;
-        const limit = parseInt(match[3].trim()) || 3;
+        const intervalSec = clampLoopInterval(parseInt(match[2].trim()) || 10);
+        const limit = clampLoopIterations(parseInt(match[3].trim()) || 3);
         const taskContent = match[4].trim();
 
         if (!targetName) continue;
         if (!agents[targetName]) {
           logConsoleEvent("SYSTEM", `Loop target '${targetName}' missing. Loop scheduling skipped.`, "info");
+          continue;
+        }
+        if (taskQueue.length >= MAX_QUEUE) {
+          logConsoleEvent("SYSTEM", `⛔ Task queue is full (${MAX_QUEUE}) — dropping scheduled loop for '${targetName}'.`, "error");
           continue;
         }
 
@@ -1650,7 +1816,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
             try {
               // Lookup and write via official multi-part post methods
               const search = await gapi.client.drive.files.list({
-                q: `'${workspaceFolderId}' in parents and name = '${targetFilename}' and trashed = false`,
+                q: `'${workspaceFolderId}' in parents and name = '${escapeDriveQuery(targetFilename)}' and trashed = false`,
                 fields: 'files(id)'
               });
 
@@ -1732,7 +1898,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
           if (realGDriveAuthed && workspaceFolderId) {
             try {
               const search = await gapi.client.drive.files.list({
-                q: `'${workspaceFolderId}' in parents and name = '${targetFilename}' and trashed = false`,
+                q: `'${workspaceFolderId}' in parents and name = '${escapeDriveQuery(targetFilename)}' and trashed = false`,
                 fields: 'files(id)'
               });
 
@@ -1768,6 +1934,97 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
           }
         }
       }
+
+      // 6 & 7. Gmail: [SEND_GMAIL: ...] sends (or drafts if the master gate is off);
+      //               [DRAFT_GMAIL: ...] always drafts.
+      const gmailRegex = /\[(SEND|DRAFT)_GMAIL:\s*to="([^"]+)",\s*subject="([^"]*)",\s*body="([\s\S]*?)"\]/gi;
+      while ((match = gmailRegex.exec(text)) !== null) {
+        const forceDraft = match[1].toUpperCase() === 'DRAFT';
+        const to = match[2].trim();
+        const subject = match[3].trim();
+        const body = match[4];
+        if (!googleToolsReady()) {
+          logConsoleEvent("SYSTEM", `❌ Gmail tool unavailable: sign in with Google to let agents compose email.`, "error");
+          continue;
+        }
+        try {
+          await gmailComposeTool(sourceAgentName, to, subject, body, forceDraft);
+        } catch (err) {
+          console.error("Gmail tool error:", err);
+          logConsoleEvent("SYSTEM", `❌ Gmail Error: could not ${forceDraft || !allowAutonomousSend ? 'draft' : 'send'} email to ${to}.`, "error");
+        }
+      }
+
+      // 8. Calendar create: [CREATE_EVENT: title="...", start="ISO", end="ISO", details="..."]
+      const eventRegex = /\[CREATE_EVENT:\s*title="([^"]+)",\s*start="([^"]+)"(?:,\s*end="([^"]*)")?(?:,\s*details="([\s\S]*?)")?\]/gi;
+      while ((match = eventRegex.exec(text)) !== null) {
+        const title = match[1].trim();
+        const start = match[2].trim();
+        const end = (match[3] || '').trim();
+        const details = match[4] || '';
+        if (!googleToolsReady()) {
+          logConsoleEvent("SYSTEM", `❌ Calendar tool unavailable: sign in with Google to let agents create events.`, "error");
+          continue;
+        }
+        try {
+          await calendarCreateTool(sourceAgentName, title, start, end, details);
+        } catch (err) {
+          console.error("Calendar create error:", err);
+          logConsoleEvent("SYSTEM", `❌ Calendar Error: could not create event "${title}". Check that the start time is a valid ISO datetime.`, "error");
+        }
+      }
+
+      // 9. Calendar list: [LIST_EVENTS] or [LIST_EVENTS: max="5"]
+      const listEventsRegex = /\[LIST_EVENTS(?::\s*max="([^"]*)")?\]/gi;
+      while ((match = listEventsRegex.exec(text)) !== null) {
+        const max = Math.min(Math.max(parseInt(match[1], 10) || 5, 1), 25);
+        if (!googleToolsReady()) {
+          logConsoleEvent("SYSTEM", `❌ Calendar tool unavailable: sign in with Google to list events.`, "error");
+          continue;
+        }
+        try {
+          await calendarListTool(sourceAgentName, max);
+        } catch (err) {
+          console.error("Calendar list error:", err);
+          logConsoleEvent("SYSTEM", `❌ Calendar Error: could not list upcoming events.`, "error");
+        }
+      }
+
+      // 10. Sheets write: [WRITE_SHEET: name="...", values="a,b ; c,d"]
+      const writeSheetRegex = /\[WRITE_SHEET:\s*name="([^"]+)",\s*values="([\s\S]*?)"\]/gi;
+      while ((match = writeSheetRegex.exec(text)) !== null) {
+        const sheetName = match[1].trim();
+        const valuesRaw = match[2];
+        if (!googleToolsReady()) {
+          logConsoleEvent("SYSTEM", `❌ Sheets tool unavailable: sign in with Google to write spreadsheets.`, "error");
+          continue;
+        }
+        try {
+          await sheetWriteTool(sourceAgentName, sheetName, valuesRaw);
+        } catch (err) {
+          console.error("Sheet write error:", err);
+          logConsoleEvent("SYSTEM", `❌ Sheets Error: could not write to spreadsheet "${sheetName}".`, "error");
+        }
+      }
+
+      // 11. Sheets read: [READ_SHEET: name="..."]
+      const readSheetRegex = /\[READ_SHEET:\s*name="([^"]+)"\]/gi;
+      while ((match = readSheetRegex.exec(text)) !== null) {
+        const sheetName = match[1].trim();
+        if (!googleToolsReady()) {
+          logConsoleEvent("SYSTEM", `❌ Sheets tool unavailable: sign in with Google to read spreadsheets.`, "error");
+          continue;
+        }
+        try {
+          await sheetReadTool(sourceAgentName, sheetName);
+        } catch (err) {
+          console.error("Sheet read error:", err);
+          logConsoleEvent("SYSTEM", `❌ Sheets Error: could not read spreadsheet "${sheetName}".`, "error");
+        }
+      }
+
+      // Persist any spawns / triggers / sandbox writes this response produced.
+      persistState();
     }
 
     // Direct Gemini Fetch Pipeline — authenticated with the signed-in Google account's own OAuth token (their own quota), with exponential retries
@@ -1785,37 +2042,64 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
       const retries = 5;
       let delay = 1000;
+      const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
       for (let i = 0; i < retries; i++) {
+        let response;
         try {
-          const response = await fetch(url, {
+          response = await fetch(url, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(payload)
           });
-
-          if (response.status === 401 || response.status === 403) {
-            googleAuth.accessToken = null;
-            sessionStorage.removeItem('agentos_google_token');
-            updateGoogleAuthUI();
-            throw new Error("Google session expired or lacks access — sign in with Google again (and confirm the Generative Language API is enabled on your project).");
-          }
-
-          if (!response.ok) {
-            throw new Error(`Gemini Server Connection Error: HTTP ${response.status}`);
-          }
-
-          const result = await response.json();
-          const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!text) {
-            throw new Error("No textual context returned from AI models.");
-          }
-          return text;
-        } catch (error) {
-          if (i === retries - 1 || !googleAuth.accessToken) throw error;
-          await new Promise(resolve => setTimeout(resolve, delay));
+        } catch (networkErr) {
+          // Transport-level failure (offline, DNS, CORS) — retryable.
+          if (i === retries - 1) throw networkErr;
+          await sleep(delay);
           delay *= 2;
+          continue;
         }
+
+        // Auth failures are permanent for this token — surface immediately, don't retry.
+        if (response.status === 401 || response.status === 403) {
+          let detail = '';
+          try {
+            const errBody = await response.json();
+            if (errBody?.error?.message) detail = ` — ${errBody.error.message}`;
+          } catch { /* non-JSON error body */ }
+          googleAuth.accessToken = null;
+          sessionStorage.removeItem('agentos_google_token');
+          updateGoogleAuthUI();
+          throw new Error(`Google session expired or lacks access (HTTP ${response.status})${detail}. Sign in with Google again (and confirm the Generative Language API is enabled and accessible on your project).`);
+        }
+
+        // Retry only on rate-limits (429) and transient server errors (5xx),
+        // honoring the server's Retry-After hint when present.
+        if (response.status === 429 || response.status >= 500) {
+          if (i === retries - 1) throw new Error(`Gemini temporarily unavailable (HTTP ${response.status}). Please retry shortly.`);
+          const retryAfter = parseInt(response.headers.get('Retry-After'), 10);
+          await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : delay);
+          delay *= 2;
+          continue;
+        }
+
+        // Other 4xx errors are permanent (bad request, disabled API, etc.) — don't retry.
+        if (!response.ok) {
+          let detail = '';
+          try {
+            const errBody = await response.json();
+            if (errBody?.error?.message) detail = ` — ${errBody.error.message}`;
+          } catch { /* non-JSON error body */ }
+          throw new Error(`Gemini request failed: HTTP ${response.status}${detail}`);
+        }
+
+        const result = await response.json();
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          // Empty output (e.g. safety block) won't change on retry — fail fast.
+          throw new Error("No text returned from the model (the response may have been blocked by a safety filter or hit the token limit).");
+        }
+        return text;
       }
     }
 
@@ -1827,6 +2111,11 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
       if (!target || !prompt.trim()) {
         showToast("Select a valid target agent and fill in core prompt contents.", "alert-circle", "error");
+        return;
+      }
+
+      if (taskQueue.length >= MAX_QUEUE) {
+        showToast(`Task queue is full (max ${MAX_QUEUE}). Let some tasks finish first.`, "alert-triangle", "error");
         return;
       }
 
@@ -1842,8 +2131,8 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         });
         showToast(`Enqueued immediate task execution on Agent [${target}]!`, "check-circle");
       } else {
-        const intervalSec = parseInt(document.getElementById('task-interval').value) || 10;
-        const iterations = parseInt(document.getElementById('task-iterations').value) || 3;
+        const intervalSec = clampLoopInterval(parseInt(document.getElementById('task-interval').value) || 10);
+        const iterations = clampLoopIterations(parseInt(document.getElementById('task-iterations').value) || 3);
 
         taskQueue.push({
           id: crypto.randomUUID(),
@@ -1862,6 +2151,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
       rebuildQueueUI();
       document.getElementById('task-prompt').value = ""; // Clear out input area
+      persistState();
     }
 
     // Quick creation form manual entry submit
@@ -1877,8 +2167,16 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
 
       // Check unique constraints
       const cleanName = name.replace(/[^a-zA-Z0-9]/g, ""); // Keep alphanumeric
+      if (!cleanName) {
+        showToast("Agent name must contain at least one letter or number.", "alert-circle", "error");
+        return;
+      }
       if (agents[cleanName]) {
         showToast("An agent with that unique identifier name already exists.", "alert-triangle", "error");
+        return;
+      }
+      if (Object.keys(agents).length >= MAX_AGENTS) {
+        showToast(`Agent cap reached (max ${MAX_AGENTS} per directory). Retire one first.`, "alert-triangle", "error");
         return;
       }
 
@@ -1899,8 +2197,9 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       // UI clean up
       document.getElementById('new-agent-name').value = "";
       document.getElementById('new-agent-persona').value = "";
-      
+
       showToast(`Agent [${cleanName}] successfully compiled and spawned!`, "user-plus");
+      persistState();
     }
 
     // Toggle Scheduled Loop Options Box inside triggering form
@@ -1922,6 +2221,15 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       const countLabel = document.getElementById('directory-count');
       const keys = Object.keys(agents);
       countLabel.textContent = `${keys.length} Active`;
+
+      if (keys.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-6 text-slate-400 text-xs italic">
+            No agents in this directory yet. Add one below, load a preset, or autogenerate an ecosystem.
+          </div>
+        `;
+        return;
+      }
 
       keys.forEach(key => {
         const agent = agents[key];
@@ -2038,6 +2346,7 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         taskQueue = taskQueue.filter(t => t.id !== taskId);
         showToast("Task loop aborted and deleted successfully.", "alert-circle", "amber");
         rebuildQueueUI();
+        persistState();
       }
     }
 
@@ -2048,15 +2357,16 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       }
       
       delete agents[agentId];
-      // Strip any orphaned queued tasks assigned to deleted agents
-      taskQueue = taskQueue.filter(t => t.toAgent !== agentId);
+      // Strip any orphaned queued tasks that reference the deleted agent (as target or source)
+      taskQueue = taskQueue.filter(t => t.toAgent !== agentId && t.fromAgent !== agentId);
 
       calculateNodePositions();
       rebuildAgentListUI();
       rebuildTargetSelectUI();
       redrawVisualGraph();
-      
+
       showToast(`Agent [${agentId}] retired and stripped from directory logs.`, "trash-2", "amber");
+      persistState();
     }
 
     // Modal Inspection Panels
@@ -2151,6 +2461,12 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
       }
 
       feed.appendChild(block);
+
+      // Trim old entries so long-running loops don't accumulate thousands of DOM nodes.
+      while (feed.childElementCount > MAX_CONSOLE_BLOCKS) {
+        feed.removeChild(feed.firstElementChild);
+      }
+
       feed.scrollTop = feed.scrollHeight;
     }
 
@@ -2310,6 +2626,172 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
     // General Utility Methods
     function isRunningTask() {
       return taskQueue.some(t => t.status === 'processing');
+    }
+
+    // Toggle + persist the autonomous-send master gate.
+    function setAutonomousSend(enabled) {
+      allowAutonomousSend = !!enabled;
+      try { localStorage.setItem('agentlooper_autosend', allowAutonomousSend ? '1' : '0'); } catch (e) { /* storage disabled */ }
+      const cb = document.getElementById('allow-autonomous-send');
+      if (cb) cb.checked = allowAutonomousSend;
+      logConsoleEvent("SYSTEM", `Autonomous email sending ${allowAutonomousSend ? 'ENABLED — agents can now send mail directly from your account' : 'DISABLED — agent [SEND_GMAIL] calls will be saved as drafts'}.`, allowAutonomousSend ? "success" : "info");
+    }
+
+    // Encode a JS string as base64url (the Gmail API's raw RFC-2822 message format), UTF-8 safe.
+    function toBase64UrlUtf8(str) {
+      return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    // The Workspace tools (Gmail / Calendar / Sheets) need a live Google session + gapi client.
+    function googleToolsReady() {
+      return !!(googleAuth.accessToken && realGDriveAuthed && typeof gapi !== 'undefined' && gapi.client);
+    }
+
+    // Push a follow-up task that feeds tool output back to the requesting agent (like READ_GDRIVE).
+    function feedBackToAgent(agentName, sourceLabel, text) {
+      if (!agents[agentName]) return;
+      if (taskQueue.length >= MAX_QUEUE) {
+        logConsoleEvent("SYSTEM", `⛔ Task queue full — cannot feed ${sourceLabel} results back to '${agentName}'.`, "error");
+        return;
+      }
+      taskQueue.push({
+        id: crypto.randomUUID(),
+        fromAgent: sourceLabel,
+        toAgent: agentName,
+        type: 'once',
+        promptText: text,
+        scheduledTime: Date.now() + 1000,
+        status: 'pending'
+      });
+      rebuildQueueUI();
+    }
+
+    // --- Gmail: compose a plain-text message and either send it or save it as a draft ---
+    async function gmailComposeTool(sourceAgentName, to, subject, body, forceDraft) {
+      const mime = [
+        `To: ${to}`,
+        `Subject: ${subject}`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/plain; charset="UTF-8"',
+        '',
+        body
+      ].join('\r\n');
+      const raw = toBase64UrlUtf8(mime);
+      const asDraft = forceDraft || !allowAutonomousSend;
+      if (asDraft) {
+        await gapi.client.request({ path: '/gmail/v1/users/me/drafts', method: 'POST', body: { message: { raw } } });
+        const reason = forceDraft ? '' : ' (autonomous sending is OFF)';
+        logConsoleEvent("SYSTEM", `📧 Agent [${sourceAgentName}] saved a Gmail DRAFT to ${to}${reason}. Review it in Gmail before sending.`, "success");
+      } else {
+        await gapi.client.request({ path: '/gmail/v1/users/me/messages/send', method: 'POST', body: { raw } });
+        logConsoleEvent("SYSTEM", `📧 Agent [${sourceAgentName}] SENT an email to ${to} from your account.`, "success");
+      }
+      triggerVisualPulse(sourceAgentName, 'GDrive');
+    }
+
+    // --- Calendar: create an event on the primary calendar ---
+    async function calendarCreateTool(sourceAgentName, title, start, end, details) {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      let endISO = end;
+      if (!endISO) {
+        const d = new Date(start);
+        endISO = isNaN(d.getTime()) ? start : new Date(d.getTime() + 3600000).toISOString();
+      }
+      await gapi.client.request({
+        path: '/calendar/v3/calendars/primary/events',
+        method: 'POST',
+        body: {
+          summary: title,
+          description: details || '',
+          start: { dateTime: start, timeZone: tz },
+          end: { dateTime: endISO, timeZone: tz }
+        }
+      });
+      logConsoleEvent("SYSTEM", `📅 Agent [${sourceAgentName}] created calendar event "${title}" starting ${start}.`, "success");
+      triggerVisualPulse(sourceAgentName, 'GDrive');
+    }
+
+    // --- Calendar: list upcoming events and feed them back to the requesting agent ---
+    async function calendarListTool(sourceAgentName, max) {
+      const res = await gapi.client.request({
+        path: '/calendar/v3/calendars/primary/events',
+        method: 'GET',
+        params: { timeMin: new Date().toISOString(), maxResults: max, singleEvents: true, orderBy: 'startTime' }
+      });
+      const items = res.result.items || [];
+      const listing = items.length
+        ? items.map(e => `• ${e.summary || '(no title)'} — ${e.start?.dateTime || e.start?.date || '(no time)'}`).join('\n')
+        : 'No upcoming events found.';
+      logConsoleEvent("SYSTEM", `📅 Agent [${sourceAgentName}] listed ${items.length} upcoming calendar event(s). Forwarding to the agent...`, "success");
+      feedBackToAgent(sourceAgentName, 'Calendar', `Here are the next ${items.length} upcoming calendar events:\n\n${listing}\n\nUse these to inform your next action.`);
+      triggerVisualPulse('GDrive', sourceAgentName);
+    }
+
+    // --- Sheets: locate (optionally create) a spreadsheet by name in the Drive workspace folder ---
+    async function findSheetIdByName(name, createIfMissing) {
+      const search = await gapi.client.drive.files.list({
+        q: `${workspaceFolderId ? `'${workspaceFolderId}' in parents and ` : ''}name = '${escapeDriveQuery(name)}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+        fields: 'files(id)'
+      });
+      const found = search.result.files;
+      if (found && found.length) return found[0].id;
+      if (!createIfMissing) return null;
+      const created = await gapi.client.drive.files.create({
+        resource: {
+          name,
+          mimeType: 'application/vnd.google-apps.spreadsheet',
+          ...(workspaceFolderId ? { parents: [workspaceFolderId] } : {})
+        },
+        fields: 'id'
+      });
+      return created.result.id;
+    }
+
+    async function sheetWriteTool(sourceAgentName, name, valuesRaw) {
+      const id = await findSheetIdByName(name, true);
+      // Rows separated by ';', cells by ',' — trimmed.
+      const rows = valuesRaw.split(';').map(r => r.split(',').map(c => c.trim()));
+      await gapi.client.request({
+        path: `/sheets/v4/spreadsheets/${id}/values/${encodeURIComponent('Sheet1!A1')}`,
+        method: 'PUT',
+        params: { valueInputOption: 'RAW' },
+        body: { values: rows }
+      });
+      logConsoleEvent("SYSTEM", `📊 Agent [${sourceAgentName}] wrote ${rows.length} row(s) to spreadsheet "${name}".`, "success");
+      triggerVisualPulse(sourceAgentName, 'GDrive');
+      syncGDriveUI();
+    }
+
+    async function sheetReadTool(sourceAgentName, name) {
+      const id = await findSheetIdByName(name, false);
+      if (!id) {
+        logConsoleEvent("SYSTEM", `❌ Sheet Read Error: No spreadsheet named "${name}" found in your Drive workspace.`, "error");
+        return;
+      }
+      const res = await gapi.client.request({
+        path: `/sheets/v4/spreadsheets/${id}/values/${encodeURIComponent('Sheet1')}`,
+        method: 'GET'
+      });
+      const values = res.result.values || [];
+      const asText = values.length ? values.map(r => r.join(', ')).join('\n') : '(the sheet is empty)';
+      logConsoleEvent("SYSTEM", `📊 Agent [${sourceAgentName}] read spreadsheet "${name}". Forwarding contents...`, "success");
+      feedBackToAgent(sourceAgentName, 'Sheets', `Here are the contents of the spreadsheet "${name}":\n\n${asText}\n\nUse this data to carry out your objectives.`);
+      triggerVisualPulse('GDrive', sourceAgentName);
+    }
+
+    // Clamp scheduled-loop parameters (from both the UI form and LLM SCHEDULE_LOOP tags).
+    function clampLoopInterval(sec) {
+      return Math.min(Math.max(Math.round(sec) || MIN_LOOP_INTERVAL_SEC, MIN_LOOP_INTERVAL_SEC), MAX_LOOP_INTERVAL_SEC);
+    }
+    function clampLoopIterations(n) {
+      return Math.min(Math.max(Math.round(n) || 1, 1), MAX_LOOP_ITERATIONS);
+    }
+
+    // Escape a value before interpolating it into a Google Drive `q` search clause. Drive
+    // query strings wrap literals in single quotes, so an unescaped ' or \ in a filename
+    // would break the query or match/delete unintended files.
+    function escapeDriveQuery(value) {
+      return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     }
 
     // HTML escape utility
