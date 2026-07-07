@@ -1117,6 +1117,15 @@ Your output must be purely JSON, matching this schema:
             return;
           }
 
+          // Google's consent screen lets the user uncheck individual scopes — so a
+          // "successful" sign-in can still come back missing one. Catch that now, since
+          // it otherwise only surfaces later as a confusing 403 from whichever API needed it.
+          const grantedScopes = (tokenResponse.scope || '').split(' ').filter(Boolean);
+          if (!grantedScopes.includes('https://www.googleapis.com/auth/cloud-platform')) {
+            logConsoleEvent("SYSTEM", `⚠️ Signed in, but the "Cloud Platform" permission checkbox was not granted — Gemini calls will fail with a 403 until you sign in again and leave that box checked.`, "error");
+            showToast('Signed in, but Gemini access wasn\'t granted — sign in again and keep the Cloud Platform box checked.', "alert-triangle", "error");
+          }
+
           googleAuth.accessToken = tokenResponse.access_token;
           sessionStorage.setItem('agentos_google_token', JSON.stringify({
             access_token: tokenResponse.access_token,
