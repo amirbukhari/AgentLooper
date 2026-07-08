@@ -40,7 +40,10 @@ reading the source or asking a clarifying question.
   without an explicit, visible, revocable user opt-in.
 - Persist a user's work (agents, task queue, sandbox files) across page
   reloads, and let them run multiple independent agent ecosystems
-  ("directories") side by side.
+  ("directories") side by side — creating, renaming, deleting, and
+  exporting/importing them as needed.
+- Surface task failures visibly (not silently) so a user can tell a broken
+  agent loop from a working one at a glance.
 
 ## 3. Non-goals
 
@@ -59,8 +62,11 @@ reading the source or asking a clarifying question.
 - No accessibility conformance target (e.g., a WCAG level) for this
   iteration — the UI carries some ARIA attributes incidentally but is not
   audited or tested against a standard.
-- No directory rename or delete capability — directories, once created,
-  persist for the life of the browser's `localStorage` (see 7.7).
+- No automatic retry of a failed task — retry is a deliberate, one-at-a-time
+  user action (see 7.1); the app never re-attempts a failed task on its own.
+- No overwrite-on-import: importing a file always creates a new directory
+  (suffixed on name collision) rather than restoring over an existing one
+  by name (see 7.9, Open questions).
 
 ## 4. Target user
 
@@ -80,13 +86,14 @@ agentic/multi-agent LLM behavior who wants to:
   and can emit inline command tags that the app parses out of the response
   text. Full schema: 6.1.
 - **Directory** — an isolated workspace: its own set of agents, task queue,
-  sandbox files, and UI graph layout. Users can create multiple directories
-  and switch between them; each is persisted independently in
-  `localStorage`. Full schema: 6.3.
+  sandbox files, and UI graph layout. Users can create, rename, delete, and
+  switch between multiple directories; each is persisted independently in
+  `localStorage`. Full schema: 6.3, lifecycle: 7.7.
 - **Task queue / scheduler** — a live 1-second tick loop that dequeues
   pending, due queue entries (oldest-array-index first) and dispatches them
   to the named agent, one at a time (the app never runs two tasks
-  concurrently). Full schema: 6.2.
+  concurrently). A task that errors becomes visibly `"failed"` rather than
+  silently vanishing. Full schema: 6.2, failure behavior: 7.1.
 - **Command tags** — the mechanism by which an agent's text output becomes an
   action. Full per-tag grammar and failure behavior: 7.1 and 7.3.
 - **Sandbox mode** — the default, no-auth mode. Agents only see the
@@ -100,9 +107,10 @@ agentic/multi-agent LLM behavior who wants to:
 - **AI Architect ecosystem builder** — a one-shot Gemini call, distinct from
   a preset, that generates a 2–4-agent team from a free-text goal the user
   types in, and adds it into the current directory. Full spec: 7.8.
-- **Export / Import** — a directory can be downloaded as a portable JSON
-  file and later re-imported (always as a new, uniquely-named directory —
-  never overwriting existing work). Full spec: 7.9.
+- **Export / Import** — a single directory, or every directory at once (a
+  full backup), can be downloaded as a portable JSON file and later
+  re-imported (always as new, uniquely-named directories — never
+  overwriting existing work). Full spec: 7.9.
 
 ## 6. Data model
 
@@ -137,19 +145,21 @@ Held in the active directory's `taskQueue` array; the scheduler tick scans
 it in array order and runs the first entry that is both `status: "pending"`
 and due (`scheduledTime <= Date.now()`).
 
-| Field              | Type                          | Required               | Notes                                                                                                                                                                  |
-| ------------------ | ----------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`               | string                        | yes                    | `crypto.randomUUID()`.                                                                                                                                                 |
-| `fromAgent`        | string                        | yes                    | Originating agent's `id`, or the literal string `"User"` for manually enqueued tasks, or `"GDrive"` for the follow-up task queued by a `[READ_GDRIVE]`/`[READ_SHEET]`. |
-| `toAgent`          | string                        | yes                    | Target agent's `id`.                                                                                                                                                   |
-| `type`             | `"once"` \| `"loop"`          | yes                    |                                                                                                                                                                        |
-| `promptText`       | string                        | yes                    | The task text sent to the agent as the Gemini user turn.                                                                                                               |
-| `scheduledTime`    | number (epoch ms)             | yes                    |                                                                                                                                                                        |
-| `status`           | `"pending"` \| `"processing"` | yes                    | There is no `"failed"`/`"error"`/`"done"` status — see 7.1 Task failure behavior.                                                                                      |
-| `intervalSec`      | number                        | only if `type: "loop"` | Clamped to `[5, 3600]` via `clampLoopInterval` (5 = `MIN_LOOP_INTERVAL_SEC`, 3600 = `MAX_LOOP_INTERVAL_SEC`); unparsable input falls back to 10 before clamping.       |
-| `currentIteration` | number                        | only if `type: "loop"` | Starts at 1.                                                                                                                                                           |
-| `maxIterations`    | number                        | only if `type: "loop"` | Clamped to `[1, 20]` via `clampLoopIterations`; unparsable input falls back to 3 before clamping.                                                                      |
-| `aborted`          | boolean                       | optional               | Set `true` and the entry is immediately spliced out of the queue when the user cancels it from the UI.                                                                 |
+| Field              | Type                                        | Required                      | Notes                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | string                                      | yes                           | `crypto.randomUUID()`.                                                                                                                                                                                                 |
+| `fromAgent`        | string                                      | yes                           | Originating agent's `id`, or the literal string `"User"` for manually enqueued tasks, or `"GDrive"` for the follow-up task queued by a `[READ_GDRIVE]`/`[READ_SHEET]`.                                                 |
+| `toAgent`          | string                                      | yes                           | Target agent's `id`.                                                                                                                                                                                                   |
+| `type`             | `"once"` \| `"loop"`                        | yes                           |                                                                                                                                                                                                                        |
+| `promptText`       | string                                      | yes                           | The task text sent to the agent as the Gemini user turn.                                                                                                                                                               |
+| `scheduledTime`    | number (epoch ms)                           | yes                           |                                                                                                                                                                                                                        |
+| `status`           | `"pending"` \| `"processing"` \| `"failed"` | yes                           | `"failed"` means the task errored and is awaiting a manual Retry or Dismiss — see 7.1 Task failure behavior. There is still no `"done"` status: a successful task is removed from the queue entirely, not marked done. |
+| `error`            | string                                      | only if `status: "failed"`    | The thrown error's message. Cleared (deleted) whenever the task transitions out of `"failed"` (Retry) or starts a fresh attempt.                                                                                       |
+| `lastError`        | string                                      | optional, `type: "loop"` only | Set when a loop iteration fails but the loop still has iterations left (so it reschedules as `"pending"` instead of `"failed"`) — a breadcrumb of the most recent failure without stopping the loop.                   |
+| `intervalSec`      | number                                      | only if `type: "loop"`        | Clamped to `[5, 3600]` via `clampLoopInterval` (5 = `MIN_LOOP_INTERVAL_SEC`, 3600 = `MAX_LOOP_INTERVAL_SEC`); unparsable input falls back to 10 before clamping.                                                       |
+| `currentIteration` | number                                      | only if `type: "loop"`        | Starts at 1.                                                                                                                                                                                                           |
+| `maxIterations`    | number                                      | only if `type: "loop"`        | Clamped to `[1, 20]` via `clampLoopIterations`; unparsable input falls back to 3 before clamping.                                                                                                                      |
+| `aborted`          | boolean                                     | optional                      | Set `true` and the entry is immediately spliced out of the queue when the user cancels/dismisses it from the UI (works identically for pending, processing, and failed tasks).                                         |
 
 ### 6.3 Directory (workspace)
 
@@ -158,13 +168,13 @@ user-entered name**, trimmed but _not_ alphanumeric-sanitized (unlike agent
 ids — directory names may contain spaces/punctuation and are case-sensitive
 exact-match keys).
 
-| Field                 | Type                                                                 | Notes                                                                                                                  |
-| --------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `agents`              | `{ [agentId]: Agent }`                                               |                                                                                                                        |
-| `taskQueue`           | `TaskQueueEntry[]`                                                   |                                                                                                                        |
-| `positions`           | `{ [nodeId]: { x: number, y: number } }`                             | UI graph-layout coordinates; always seeded with `User` (`{x:50,y:15}`) and `GDrive` (`{x:85,y:18}`) pseudo-nodes.      |
-| `completedTasksCount` | number                                                               | Incremented once per task removed from the queue — **including tasks whose Gemini call errored**; see 7.1.             |
-| `mockGDriveFiles`     | `{ name: string, size: string, content: string, updated: string }[]` | Sandbox-mode virtual file store. `size` is a display string (e.g. `"42 B"`), not a number. Ignored in real-Drive mode. |
+| Field                 | Type                                                                 | Notes                                                                                                                                        |
+| --------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents`              | `{ [agentId]: Agent }`                                               |                                                                                                                                              |
+| `taskQueue`           | `TaskQueueEntry[]`                                                   |                                                                                                                                              |
+| `positions`           | `{ [nodeId]: { x: number, y: number } }`                             | UI graph-layout coordinates; always seeded with `User` (`{x:50,y:15}`) and `GDrive` (`{x:85,y:18}`) pseudo-nodes.                            |
+| `completedTasksCount` | number                                                               | Incremented only when a task actually completes successfully — a task that ends up `status: "failed"` does **not** increment this (see 7.1). |
+| `mockGDriveFiles`     | `{ name: string, size: string, content: string, updated: string }[]` | Sandbox-mode virtual file store. `size` is a display string (e.g. `"42 B"`), not a number. Ignored in real-Drive mode.                       |
 
 ### 6.4 Persistence keys
 
@@ -174,8 +184,11 @@ exact-match keys).
 | `agentlooper_autosend` | `localStorage`   | `"1"` \| `"0"`                                                             | The human-in-the-loop email gate (7.4), stored independently of any directory.                                                                                          |
 | `agentos_google_token` | `sessionStorage` | `{ access_token: string, expires_at: number (epoch ms) }`                  | The live Google OAuth access token. Deliberately **not** written to `localStorage` — cleared when the tab session ends, and never included in the directory blob.       |
 
-On boot, any task queue entry restored with `status: "processing"` is reset
-to `"pending"` (recovers a task that was mid-execution when the tab closed).
+On boot (or Import — see 7.9), any task queue entry restored with
+`status: "processing"` is reset to `"pending"` (recovers a task that was
+mid-execution when the tab closed or the file was exported). A restored
+`status: "failed"` entry is left as `"failed"` — it survives a reload exactly
+as the user left it.
 
 ## 7. Functional requirements
 
@@ -211,7 +224,9 @@ to `"pending"` (recovers a task that was mid-execution when the tab closed).
   required attribute or using single quotes / no quotes around a value.
 - The scheduler tick runs on a 1-second `setInterval`, processes **at most
   one** due `pending` entry per tick, and will not start a new one while
-  another is `status: "processing"` (`processingTask` flag).
+  another is `status: "processing"` (`processingTask` flag). Entries with
+  `status: "failed"` are never picked up automatically — only a `pending`
+  entry (whether newly enqueued or reset via Retry) is eligible.
 
 **Per-tag grammar and behavior:**
 
@@ -232,14 +247,35 @@ to `"pending"` (recovers a task that was mid-execution when the tab closed).
 **Task failure behavior:** if `executeTaskNode` throws for any reason
 (target agent no longer exists, or `callGemini` exhausts its retries — see
 7.3), the scheduler's `catch` block logs a single
-`"Task failure on execution pipeline: <message>"` SYSTEM error line and then
-falls through to the **same** completion/reschedule logic used for success:
-a `once` task is still removed from the queue and still increments
-`completedTasksCount`; a `loop` task not yet on its last iteration is still
-rescheduled for its next interval. **There is no distinct failed/error task
-state** — a failed task is indistinguishable from a completed one in the
-data model, and the agent's `memory` is not updated for a failed attempt
-(the memory-append lines run only after a successful `callGemini` return).
+`"Task failure on execution pipeline: <message>"` SYSTEM error line, then the
+`finally` block branches on task type and position:
+
+- **`once` task, or a `loop` task on its last iteration:** the task's
+  `status` becomes `"failed"` and `error` is set to the thrown message. The
+  task is **not** removed from the queue and `completedTasksCount` does
+  **not** increment — this is the visible failure state, distinct from a
+  successful completion. The agent's `memory` is not updated (the
+  memory-append lines only run after a successful `callGemini` return).
+- **`loop` task with iterations remaining:** unchanged from a successful
+  iteration in every respect except one — `task.lastError` is set to the
+  thrown message (a breadcrumb, not a status change) and the SYSTEM
+  reschedule log line is logged at `"error"` level instead of `"info"` and
+  says `"(previous iteration failed: <message>)"`. `currentIteration` still
+  advances and `status` still returns to `"pending"` for the next run — a
+  single failed iteration does not stop the loop.
+
+A task with `status: "failed"` sits in the Task Queue panel with a red
+"Failed" badge and its error message shown inline, and offers two manual
+actions:
+
+- **Retry** (`retryTask`): resets `status` to `"pending"`, `scheduledTime` to
+  now, and clears `error` — the scheduler picks it up on its next tick like
+  any other due task.
+- **Dismiss** (reuses `cancelTask`, same control as aborting any other
+  task): removes it from the queue immediately.
+
+There is no automatic retry — a failed task sits inert until the user acts
+on it, and (per 7.2) still counts against `MAX_QUEUE` until they do.
 
 ### 7.2 Safety caps (runaway-loop protection)
 
@@ -247,7 +283,10 @@ data model, and the agent's `memory` is not updated for a failed attempt
   manual creation, `[CREATE_AGENT]`, `[TRIGGER_AGENT]`'s auto-spawn
   fallback, and the bulk AI-ecosystem generator.
 - **Max queued tasks:** 60 (`MAX_QUEUE`), checked before every enqueue
-  (manual, `[TRIGGER_AGENT]`, `[SCHEDULE_LOOP]`).
+  (manual, `[TRIGGER_AGENT]`, `[SCHEDULE_LOOP]`). `status: "failed"` tasks
+  left undismissed count toward this cap exactly like `pending`/`processing`
+  ones — a directory with many un-dismissed failures can hit `MAX_QUEUE`
+  and start rejecting new tasks until the user retries or dismisses some.
 - **Scheduled-loop interval:** clamped to `[5, 3600]` seconds
   (`MIN_LOOP_INTERVAL_SEC`–`MAX_LOOP_INTERVAL_SEC`); values outside this
   range are silently clamped, not rejected.
@@ -256,7 +295,7 @@ data model, and the agent's `memory` is not updated for a failed attempt
   `clampLoopIterations`).
 - **Console feed cap:** 200 blocks (`MAX_CONSOLE_BLOCKS`); oldest entries
   trimmed from the DOM once exceeded — this affects only the on-screen feed,
-  not any persisted log (there is no persisted action log; see 8).
+  not any persisted log (there is no persisted action log; see 10).
 - All caps apply uniformly whether the triggering actor is the user (via UI)
   or another agent (via inline tag); exceeding any cap never throws — it
   always degrades to a skipped action plus a logged SYSTEM message.
@@ -326,8 +365,9 @@ data model, and the agent's `memory` is not updated for a failed attempt
 
 - `persistState()` writes `workspaces` and `currentWorkspace` to
   `localStorage["agentlooper_state_v1"]` (6.4) on `beforeunload` and after
-  most mutating actions (agent create/deregister, task enqueue/cancel,
-  directory create/switch, Gmail/Calendar/Sheets/Drive tag execution).
+  most mutating actions (agent create/deregister, task enqueue/cancel/retry,
+  directory create/rename/delete/switch, Export/Import, Gmail/Calendar/
+  Sheets/Drive tag execution).
 - On boot, `loadPersistedState()` restores this blob if present and valid
   (a non-empty `workspaces` object), resets any `"processing"` task back to
   `"pending"` (6.4), and falls back to seeding the default band-manager
@@ -373,6 +413,26 @@ this data:
   A newly created directory starts with zero agents, an empty task queue,
   and no sandbox files (the default preset is _not_ auto-seeded into an
   explicitly-created directory — only the initial boot workspace is).
+- **Rename** (`renameCurrentWorkspacePrompt`): via a native `prompt()`
+  dialog pre-filled with the current directory's name. Renaming is a pure
+  key move — `workspaces[newName] = workspaces[oldName]` then
+  `delete workspaces[oldName]` — so agents, task queue, and everything else
+  are untouched; it is safe to rename even while a task is `"processing"`
+  (nothing about the rename touches the live scheduler). Cancelling the
+  prompt, submitting the unchanged name, or submitting a blank name are all
+  no-ops. Renaming to a name that collides with an existing directory
+  (exact string match) is rejected with the same
+  `"A directory with that name already exists."` toast used by Create.
+- **Delete** (`deleteCurrentWorkspacePrompt`): requires confirming a native
+  `confirm()` dialog. Blocked (with a toast, no state change) in two cases:
+  the directory has a `status: "processing"` task
+  (`"Cannot delete a directory while an agent task is active."`), or it is
+  the only remaining directory
+  (`"Cannot delete the only remaining directory."` — the app always needs
+  at least one). On a confirmed delete, the directory's key is removed from
+  `workspaces` and the app switches to whichever directory happens to be
+  first in the (now-shrunk) `workspaces` object — there is no "most
+  recently used" ordering, just object key order.
 - **Switch:** selecting a different directory from the dropdown saves the
   current directory's live state, then loads the target directory's saved
   state into the active in-memory variables (`agents`, `taskQueue`, etc.).
@@ -380,10 +440,6 @@ this data:
   (`"Cannot switch workspaces while an agent task is active."`) while any
   task is `status: "processing"`; the dropdown selection is reverted in
   that case.
-- **Rename / delete:** **not implemented.** There is no code path to rename
-  or remove a directory once created; it persists in `localStorage`
-  indefinitely (see Non-goals, 3). This is a deliberate current-state
-  limitation, not an oversight to silently work around.
 - **Concurrency:** only the active directory's task queue is ever ticked —
   switching away stops that directory's scheduler from running (its
   `taskQueue` array is saved as static data, not iterated again until it's
@@ -432,14 +488,15 @@ goal, additively into the current directory.
 
 ### 7.9 Directory export / import
 
-Client-side-only JSON backup/restore of a single directory, via the
-Export/Import buttons in the Directory switcher pill (header).
+Client-side-only JSON backup/restore, via the Export/Export-All/Import
+buttons in the Directory switcher pill (header). Both export shapes share
+one `<input type="file">`, and Import auto-detects which shape it received.
 
-- **Export** (`exportCurrentDirectory`): commits any pending in-memory
-  changes (`saveCurrentWorkspaceState()`), then downloads a JSON file named
-  `<sanitized-directory-name>.agentlooper.json` (via a `Blob` +
-  `URL.createObjectURL` + a synthetic `<a download>` click — no server
-  round-trip) shaped as:
+- **Export current directory** (`exportCurrentDirectory`): commits any
+  pending in-memory changes (`saveCurrentWorkspaceState()`), then downloads
+  a JSON file named `<sanitized-directory-name>.agentlooper.json` (via a
+  `Blob` + `URL.createObjectURL` + a synthetic `<a download>` click — no
+  server round-trip) shaped as:
   ```json
   {
     "agentlooperExport": 1,
@@ -449,40 +506,58 @@ Export/Import buttons in the Directory switcher pill (header).
   }
   ```
   `directory` is exactly the 6.3 Directory shape.
+- **Export full backup** (`exportAllDirectories`): commits pending changes,
+  then downloads `agentlooper-backup-<ISO-timestamp-with-colons-as-dashes>.json`
+  shaped as:
+  ```json
+  {
+    "agentlooperExport": 1,
+    "kind": "backup",
+    "exportedAt": "<ISO-8601 timestamp>",
+    "currentWorkspace": "<name active at export time>",
+    "workspaces": { "<directoryName>": { ...Directory shape... }, "...": {} }
+  }
+  ```
+  containing every directory in `workspaces`, unmodified.
 - **Import** (`handleImportFile`, wired to a hidden `<input type="file"
-accept=".json">`): reads the selected file as text and `JSON.parse`s it.
+accept=".json">`): reads the selected file as text and `JSON.parse`s it,
+  then dispatches on shape:
   - Invalid JSON syntax → toast "Import failed: not valid JSON.", no state
     change.
-  - Valid JSON but missing a `directory` object, or `directory.agents` isn't
-    an object, or `directory.taskQueue` isn't an array → toast "Import
-    failed: not a recognized AgentLooper directory export.", no state
-    change.
-  - Otherwise, the import **always lands as a new directory** — it never
-    overwrites the current or any existing directory. The new directory's
-    name comes from `directoryName` in the file (falling back to
-    `"Imported Directory"` if absent/blank); if that name already exists in
-    `workspaces`, a numeric suffix is appended and incremented —
-    `"<name> (Imported 2)"`, `"(Imported 3)"`, etc. — until a unique name is
-    found.
-  - Any task queue entry restored with `status: "processing"` is reset to
-    `"pending"` on import (same fixup as normal boot restore, 6.4) so it
-    isn't stuck forever.
-  - Missing optional fields (`positions`, `completedTasksCount`,
-    `mockGDriveFiles`) are defaulted the same way a brand-new directory
-    would be (6.3's defaults / `0` / `[]`), so a hand-edited or partial file
-    still imports.
-  - If no task in the _current_ directory is `status: "processing"`, the app
-    switches to the newly imported directory immediately (same guard as
-    7.7's directory switch) and shows a "Imported and switched to
-    `<name>`" toast. If a task **is** processing, the import still succeeds
-    (the new directory is created and persisted) but the app stays on the
-    current directory, with a toast explaining the user must switch
-    manually once the active task finishes.
-  - `persistState()` runs at the end of either path, so the imported
-    directory survives a reload immediately.
-- Export/Import operate on exactly one directory at a time — there is no
-  whole-app (all-directories) backup/restore in this iteration (see Open
-  questions, 11).
+  - A top-level `directory` object present → **single-directory import**:
+    validated (`directory.agents` must be an object, `directory.taskQueue`
+    must be an array — otherwise toast "Import failed: not a recognized
+    AgentLooper directory export." and no state change) and landed under a
+    new directory named after `directoryName` (falling back to
+    `"Imported Directory"` if absent/blank).
+  - Else a top-level `workspaces` object present → **full-backup import**:
+    every entry in `workspaces` is validated and landed the same way as a
+    single-directory import, one at a time; entries that fail validation
+    are skipped individually rather than aborting the whole import. If
+    _none_ validate, toast "Import failed: backup file contained no valid
+    directories." and no state change.
+  - Neither shape present → toast "Import failed: not a recognized
+    AgentLooper export file.", no state change.
+  - **Landing a directory** (shared by both paths): the name is
+    disambiguated against existing `workspaces` keys by appending an
+    incrementing suffix — `"<name> (Imported 2)"`, `"(Imported 3)"`, etc. —
+    so an import **never** overwrites the current or any existing
+    directory. Any task queue entry with `status: "processing"` is reset to
+    `"pending"` (same fixup as normal boot restore, 6.4); a `"failed"` entry
+    stays `"failed"`. Missing optional fields (`positions`,
+    `completedTasksCount`, `mockGDriveFiles`) are defaulted the same way a
+    brand-new directory would be (6.3's defaults / `0` / `[]`), so a
+    hand-edited or partial file still imports.
+  - **Post-import switch:** if no task in the _current_ directory is
+    `status: "processing"`, the app switches to the imported directory (for
+    a backup with multiple directories: to whichever one the backup's own
+    `currentWorkspace` landed as, if it didn't collide, otherwise the first
+    directory landed) and shows a success toast naming what was imported.
+    If a task **is** processing, the import still succeeds (directories are
+    created and persisted) but the app stays put, with a toast explaining
+    the user must switch manually once the active task finishes.
+  - `persistState()` runs at the end of either path, so imported
+    directories survive a reload immediately.
 
 ## 8. Non-functional requirements
 
@@ -545,7 +620,7 @@ One or more pass/fail criteria per functional requirement in Section 7.
 Given/When/Then form is used where a specific trigger and outcome are
 testable.
 
-**Agent orchestration (7.1)**
+**Agent orchestration and task failure (7.1)**
 
 1. Given a directory with 39 agents, when a `[CREATE_AGENT]` tag or the
    manual form registers a 40th, then it succeeds; a 41st attempt by either
@@ -567,139 +642,243 @@ testable.
    exist, then no agent is created, no task is enqueued, and a SYSTEM log
    line reading "Loop target 'Ghost' missing. Loop scheduling skipped."
    appears.
-6. Given a task whose `callGemini` call ultimately throws (e.g., 5
-   consecutive 500s), when the scheduler tick catches it, then the task is
-   still removed from the queue (`once`) or rescheduled (`loop`, if
-   iterations remain) exactly as on success, `completedTasksCount`
-   increments identically, and no entry is added to the target agent's
-   `memory`.
+6. Given a `once` task whose `callGemini` call ultimately throws (e.g., 5
+   consecutive 500s), when the scheduler tick catches it, then the task's
+   `status` becomes `"failed"`, `error` holds the thrown message, the task
+   remains in `taskQueue`, `completedTasksCount` does not increment, and no
+   entry is added to the target agent's `memory`.
+7. Given a `loop` task not on its last iteration whose iteration throws,
+   then `status` returns to `"pending"` for the next iteration,
+   `currentIteration` still advances, `lastError` is set to the thrown
+   message, and the loop is not stopped.
+8. Given a `loop` task ON its last iteration (`currentIteration ===
+maxIterations`) whose iteration throws, then `status` becomes `"failed"`
+   (not removed, not completed) exactly like criterion 6, and
+   `completedTasksCount` does not increment.
+9. Given a task with `status: "failed"`, when its Retry control is clicked,
+   then `status` becomes `"pending"`, `scheduledTime` is set to now, `error`
+   is cleared, and the scheduler picks it up on its next due tick.
+10. Given a task with `status: "failed"`, when its dismiss (✕) control is
+    clicked, then the task is removed from `taskQueue` (same code path as
+    aborting any other task).
+11. Given the same task fails, is retried, and succeeds, then its final
+    state is indistinguishable from a task that succeeded on the first
+    attempt (removed from the queue, `completedTasksCount` incremented,
+    `memory` updated).
 
-**Safety caps (7.2)** 7. Given a directory at 60 queued tasks, when any tag or UI action attempts
-to enqueue a 61st, then it is rejected with a logged/toasted "queue is
-full (60)" message and the queue length remains 60. 8. Given `[SCHEDULE_LOOP: ..., interval_sec="1", limit="9999", ...]`, when
-parsed, then the resulting entry has `intervalSec: 5` and
-`maxIterations: 20`. 9. Given more than 200 console blocks have been logged, then the oldest
-entries are removed from the DOM such that exactly 200 remain.
+**Safety caps (7.2)**
 
-**Google Workspace integration (7.3)** 10. Given a user unchecks the `cloud-platform` scope checkbox at Google
-consent, when sign-in completes, then a toast, a SYSTEM console log
-line, and a `console.warn` call all fire, each referencing the missing
-scope. 11. Given a valid session token, when any Workspace/Gemini API call returns
-HTTP 401 or 403, then `googleAuth.accessToken` is cleared, the
-`sessionStorage` token is removed, the sign-in UI reflects signed-out,
-and the console shows an error instructing the user to sign in again —
-within the same task's failure handling (no separate reauth flow is
-triggered automatically). 12. Given a Gemini call returns HTTP 429 with a `Retry-After: 2` header,
-then the retry occurs after 2 seconds, not the default 1-second/doubling
-schedule. 13. Given sandbox mode (`gDriveMode !== 'real'`) is active, then the model's
-system instruction never includes the Gmail/Calendar/Sheets tag
-documentation block (`workspaceToolsHelp` is empty).
+12. Given a directory at 60 queued tasks, when any tag or UI action attempts
+    to enqueue a 61st, then it is rejected with a logged/toasted "queue is
+    full (60)" message and the queue length remains 60.
+13. Given `[SCHEDULE_LOOP: ..., interval_sec="1", limit="9999", ...]`, when
+    parsed, then the resulting entry has `intervalSec: 5` and
+    `maxIterations: 20`.
+14. Given more than 200 console blocks have been logged, then the oldest
+    entries are removed from the DOM such that exactly 200 remain.
+15. Given a directory with 60 queued tasks, 10 of which are `status:
+"failed"` and undismissed, then a new enqueue attempt is still rejected
+    (failed tasks count toward `MAX_QUEUE` until dismissed or retried).
 
-**Human-in-the-loop email gate (7.4)** 14. Given the autonomous-send toggle is off (default) and an agent emits
-`[SEND_GMAIL: to="x@example.com", subject="s", body="b"]`, then a Gmail
-**draft** is created via the API and no message is sent. 15. Given the toggle is explicitly turned on, when the same tag is emitted,
-then the email is sent (not drafted). 16. Given any toggle state, when an agent emits `[DRAFT_GMAIL: ...]`, then a
-draft is always created, never a sent message.
+**Google Workspace integration (7.3)**
 
-**Persistence (7.5)** 17. Given any directory state (agents, task queue, sandbox files), when the
-page is reloaded, then `workspaces[currentWorkspace]` after reload is
-deep-equal to its value immediately before reload, except that any task
-with `status: "processing"` at save time is `"pending"` after reload. 18. Given no `agentlooper_state_v1` key exists in `localStorage` on boot,
-then a directory named `"Inhalants Directory"` is created and seeded
-with the `band` preset's agents.
+16. Given a user unchecks the `cloud-platform` scope checkbox at Google
+    consent, when sign-in completes, then a toast, a SYSTEM console log
+    line, and a `console.warn` call all fire, each referencing the missing
+    scope.
+17. Given a valid session token, when any Workspace/Gemini API call returns
+    HTTP 401 or 403, then `googleAuth.accessToken` is cleared, the
+    `sessionStorage` token is removed, the sign-in UI reflects signed-out,
+    and the console shows an error instructing the user to sign in again —
+    within the same task's failure handling (no separate reauth flow is
+    triggered automatically).
+18. Given a Gemini call returns HTTP 429 with a `Retry-After: 2` header,
+    then the retry occurs after 2 seconds, not the default 1-second/doubling
+    schedule.
+19. Given sandbox mode (`gDriveMode !== 'real'`) is active, then the model's
+    system instruction never includes the Gmail/Calendar/Sheets tag
+    documentation block (`workspaceToolsHelp` is empty).
 
-**Presets (7.6)** 19. Given the app boots with no persisted state and no other seeding has
-happened yet, then the default directory is auto-seeded with the `band`
-preset's 3 agents (Manager, Booking, Merch). 20. Given a directory already has 1 or more agents, when that directory is
-(re-)loaded via `loadWorkspaceState` (boot restore or directory switch),
-then no preset agents are auto-seeded into it (the directory's agent set
-is unchanged by this path). 21. Given a directory with any existing agents and/or queued tasks (none
-`processing`), when the user clicks "Band Manager" or "Code Generation"
-in the Starter Presets panel, then the directory's `agents` and
-`taskQueue` are fully replaced with the chosen preset's 3 agents and an
-empty queue, the console feed is cleared, the task-prompt field and
-task-target-agent select reflect the preset's `initialTask`, and a
-"Loaded preset environment: `<band|code>`" toast appears. 22. Given a task in the directory has `status: "processing"`, when a Starter
-Presets button is clicked, then the load is rejected with the
-"Clear active running tasks..." toast and neither `agents` nor
-`taskQueue` are modified.
+**Human-in-the-loop email gate (7.4)**
 
-**Directory lifecycle (7.7)** 23. Given a directory named `"Foo"` already exists, when a user attempts to
-create another directory also named exactly `"Foo"`, then creation is
-rejected with the "A directory with that name already exists." toast. 24. Given a task in the current directory has `status: "processing"`, when
-the user selects a different directory from the dropdown, then the
-switch is blocked, the dropdown reverts to the current directory, and
-the "Cannot switch workspaces..." toast is shown. 25. There is no UI control, tag, or function that renames or deletes an
-existing directory (verifiable by absence in the codebase — see 7.7).
+20. Given the autonomous-send toggle is off (default) and an agent emits
+    `[SEND_GMAIL: to="x@example.com", subject="s", body="b"]`, then a Gmail
+    **draft** is created via the API and no message is sent.
+21. Given the toggle is explicitly turned on, when the same tag is emitted,
+    then the email is sent (not drafted).
+22. Given any toggle state, when an agent emits `[DRAFT_GMAIL: ...]`, then a
+    draft is always created, never a sent message.
 
-**Non-functional requirements (8)** 26. Given the app is opened via `file://` instead of `http(s)://`, then
-Google sign-in fails to complete (Google Identity Services requires a
-secure context) while sandbox mode (no sign-in, no `[SEND_GMAIL]`/
-`[CREATE_EVENT]`/etc. tags advertised) remains fully usable. 27. Given the latest stable release of Chrome, Edge, Firefox, or Safari on
-desktop Windows/macOS/Linux, then the app loads and sandbox mode is
-fully functional with no console errors on boot; no other browser is a
-supported target. 28. Given the same directory open in two browser tabs, when both tabs
-mutate state and both eventually fire `persistState()` (e.g., via
-`beforeunload`), then `localStorage["agentlooper_state_v1"]` reflects
-only the last tab to write — the other tab's unsaved-at-that-point
-changes are gone, with no error surfaced to either tab. 29. Given the repository as checked out, then no `package.json` build/compile
-script is required to run the app — `index.html` is directly loadable by
-a browser (via `npm run dev`'s static file server or any other static
-server) with zero transpilation step. 30. There is no accessibility audit, WCAG-conformance check, or automated
-a11y test in CI — verifiable by absence from `.github/workflows/ci.yml`
-(only `npm run lint` runs there).
+**Persistence (7.5)**
 
-**AI Architect ecosystem builder (7.8)** 31. Given an empty goal string, when the "Autogenerate Ecosystem" action is
-triggered, then no Gemini call is made and a toast reading "Please
-describe what ecosystem you want to build." is shown. 32. Given a valid goal and a directory with 38 existing agents, when Gemini
-returns 4 agents in its structured response, then 2 are created (filling
-the cap to 40) and 2 are skipped with a logged agent-cap error each —
-the run as a whole still reports success (the toast and prompt-prefill
-still occur) since the top-level call succeeded. 33. Given Gemini returns text that fails `JSON.parse`, then zero agents are
-added to the directory, a SYSTEM log line prefixed "Failed to generate
-architecture:" appears, an error toast is shown, and the trigger button
-is re-enabled with its original label. 34. Given a successful run whose `initialTask.targetAgent` (after
-sanitization) does not match any agent actually created this run or
-already present, then the task-target dropdown falls back to the first
-agent in the directory's `agents` object, and no task is auto-enqueued
-in either case — the user must submit the pre-filled prompt manually.
+23. Given any directory state (agents, task queue, sandbox files), when the
+    page is reloaded, then `workspaces[currentWorkspace]` after reload is
+    deep-equal to its value immediately before reload, except that any task
+    with `status: "processing"` at save time is `"pending"` after reload.
+24. Given no `agentlooper_state_v1` key exists in `localStorage` on boot,
+    then a directory named `"Inhalants Directory"` is created and seeded
+    with the `band` preset's agents.
 
-**Directory export/import (7.9)** 35. Given any directory, when Export is clicked, then a file named
-`<sanitized-name>.agentlooper.json` downloads containing
-`agentlooperExport: 1`, the directory name, an ISO timestamp, and a
-`directory` object deep-equal to `workspaces[currentWorkspace]` at
-export time. 36. Given a file that isn't valid JSON, when it's selected for Import, then
-a "not valid JSON" error toast appears and no directory is added to
-`workspaces`. 37. Given valid JSON lacking a `directory.agents` object or
-`directory.taskQueue` array, when selected for Import, then a "not a
-recognized AgentLooper directory export" error toast appears and no
-directory is added. 38. Given a valid export file whose `directoryName` matches an existing
-directory, when imported, then a new directory named
-`"<name> (Imported 2)"` is created (incrementing further on repeated
-collisions) rather than overwriting the existing one. 39. Given a valid export file containing a task with `status: "processing"`,
-when imported, then that task's status is `"pending"` in the new
-directory immediately after import. 40. Given no task in the current directory is `status: "processing"`, when a
-valid file is imported, then the app switches to the newly created
-directory and shows an "Imported and switched to..." toast; given a task
-**is** `status: "processing"`, the import still creates the directory
-but the app stays on the current one, with a toast saying to switch
-manually once the active task finishes.
+**Presets (7.6)**
+
+25. Given the app boots with no persisted state and no other seeding has
+    happened yet, then the default directory is auto-seeded with the `band`
+    preset's 3 agents (Manager, Booking, Merch).
+26. Given a directory already has 1 or more agents, when that directory is
+    (re-)loaded via `loadWorkspaceState` (boot restore or directory switch),
+    then no preset agents are auto-seeded into it (the directory's agent set
+    is unchanged by this path).
+27. Given a directory with any existing agents and/or queued tasks (none
+    `processing`), when the user clicks "Band Manager" or "Code Generation"
+    in the Starter Presets panel, then the directory's `agents` and
+    `taskQueue` are fully replaced with the chosen preset's 3 agents and an
+    empty queue, the console feed is cleared, the task-prompt field and
+    task-target-agent select reflect the preset's `initialTask`, and a
+    "Loaded preset environment: `<band|code>`" toast appears.
+28. Given a task in the directory has `status: "processing"`, when a Starter
+    Presets button is clicked, then the load is rejected with the
+    "Clear active running tasks..." toast and neither `agents` nor
+    `taskQueue` are modified.
+
+**Directory lifecycle (7.7)**
+
+29. Given a directory named `"Foo"` already exists, when a user attempts to
+    create another directory also named exactly `"Foo"`, then creation is
+    rejected with the "A directory with that name already exists." toast.
+30. Given a task in the current directory has `status: "processing"`, when
+    the user selects a different directory from the dropdown, then the
+    switch is blocked, the dropdown reverts to the current directory, and
+    the "Cannot switch workspaces..." toast is shown.
+31. Given the current directory is renamed to a name that doesn't collide
+    with any existing directory (including while a task is `processing`),
+    then `workspaces` no longer has the old key, a new key with the new name
+    holds the identical `agents`/`taskQueue`/`positions`/etc., and
+    `currentWorkspace` equals the new name.
+32. Given the current directory is renamed to a name that already exists,
+    then the rename is rejected with the "A directory with that name
+    already exists." toast and `workspaces` is unchanged.
+33. Given more than one directory exists and none has a `status:
+"processing"` task, when the user deletes the current directory and
+    confirms the browser dialog, then that key is removed from `workspaces`
+    and the app switches to one of the remaining directories.
+34. Given only one directory exists, when delete is attempted, then it is
+    rejected with the "Cannot delete the only remaining directory." toast
+    and `workspaces` is unchanged.
+35. Given a task in the current directory has `status: "processing"`, when
+    delete is attempted, then it is rejected with the "Cannot delete a
+    directory while an agent task is active." toast and `workspaces` is
+    unchanged.
+
+**Non-functional requirements (8)**
+
+36. Given the app is opened via `file://` instead of `http(s)://`, then
+    Google sign-in fails to complete (Google Identity Services requires a
+    secure context) while sandbox mode (no sign-in, no `[SEND_GMAIL]`/
+    `[CREATE_EVENT]`/etc. tags advertised) remains fully usable.
+37. Given the latest stable release of Chrome, Edge, Firefox, or Safari on
+    desktop Windows/macOS/Linux, then the app loads and sandbox mode is
+    fully functional with no console errors on boot; no other browser is a
+    supported target.
+38. Given the same directory open in two browser tabs, when both tabs
+    mutate state and both eventually fire `persistState()` (e.g., via
+    `beforeunload`), then `localStorage["agentlooper_state_v1"]` reflects
+    only the last tab to write — the other tab's unsaved-at-that-point
+    changes are gone, with no error surfaced to either tab.
+39. Given the repository as checked out, then no `package.json` build/compile
+    script is required to run the app — `index.html` is directly loadable by
+    a browser (via `npm run dev`'s static file server or any other static
+    server) with zero transpilation step.
+40. There is no accessibility audit, WCAG-conformance check, or automated
+    a11y test in CI — verifiable by absence from `.github/workflows/ci.yml`
+    (only `npm run lint` runs there).
+
+**AI Architect ecosystem builder (7.8)**
+
+41. Given an empty goal string, when the "Autogenerate Ecosystem" action is
+    triggered, then no Gemini call is made and a toast reading "Please
+    describe what ecosystem you want to build." is shown.
+42. Given a valid goal and a directory with 38 existing agents, when Gemini
+    returns 4 agents in its structured response, then 2 are created (filling
+    the cap to 40) and 2 are skipped with a logged agent-cap error each —
+    the run as a whole still reports success (the toast and prompt-prefill
+    still occur) since the top-level call succeeded.
+43. Given Gemini returns text that fails `JSON.parse`, then zero agents are
+    added to the directory, a SYSTEM log line prefixed "Failed to generate
+    architecture:" appears, an error toast is shown, and the trigger button
+    is re-enabled with its original label.
+44. Given a successful run whose `initialTask.targetAgent` (after
+    sanitization) does not match any agent actually created this run or
+    already present, then the task-target dropdown falls back to the first
+    agent in the directory's `agents` object, and no task is auto-enqueued
+    in either case — the user must submit the pre-filled prompt manually.
+
+**Directory export/import (7.9)**
+
+45. Given any directory, when Export is clicked, then a file named
+    `<sanitized-name>.agentlooper.json` downloads containing
+    `agentlooperExport: 1`, the directory name, an ISO timestamp, and a
+    `directory` object deep-equal to `workspaces[currentWorkspace]` at
+    export time.
+46. Given a file that isn't valid JSON, when it's selected for Import, then
+    a "not valid JSON" error toast appears and no directory is added to
+    `workspaces`.
+47. Given valid JSON lacking both a `directory` object and a `workspaces`
+    object at the top level, when selected for Import, then a "not a
+    recognized AgentLooper export file" error toast appears and no
+    directory is added.
+48. Given a valid single-directory export file whose `directoryName`
+    matches an existing directory, when imported, then a new directory
+    named `"<name> (Imported 2)"` is created (incrementing further on
+    repeated collisions) rather than overwriting the existing one.
+49. Given a valid export file containing a task with `status: "processing"`,
+    when imported, then that task's status is `"pending"` in the new
+    directory immediately after import; a task with `status: "failed"`
+    stays `"failed"`.
+50. Given no task in the current directory is `status: "processing"`, when a
+    valid single-directory file is imported, then the app switches to the
+    newly created directory and shows an "Imported..." toast; given a task
+    **is** `status: "processing"`, the import still creates the directory
+    but the app stays on the current one, with a toast saying to switch
+    manually once the active task finishes.
+51. Given 3 directories exist, when "Export Full Backup" is clicked, then a
+    file named `agentlooper-backup-<timestamp>.json` downloads containing
+    `kind: "backup"`, a `workspaces` map with all 3 directories, and a
+    `currentWorkspace` string matching the directory active at export time.
+52. Given a valid backup-shaped file (top-level `workspaces` map) is
+    selected for Import, then every directory inside it is landed under a
+    unique name (suffixed on collision, same rule as single-directory
+    import) and one combined "Imported N director(y/ies) from backup" toast
+    appears — not one toast per directory.
+53. Given a backup file whose `currentWorkspace` matches the name one of its
+    directories landed under (no collision), then the app switches to that
+    directory after import (subject to the same processing-task guard as
+    criterion 50); otherwise it switches to the first successfully-imported
+    directory.
+54. Given a backup file where some directory entries are valid and others
+    are malformed (missing `agents`/`taskQueue`), when imported, then the
+    valid entries are still landed and switched-to/toasted normally, and the
+    malformed entries are silently skipped (not counted, no partial/broken
+    directory created for them).
 
 ## 10. Out of scope / known limitations
 
-- No collaboration or sharing of a directory between multiple users/browsers.
-- No cross-device sync (state lives in one browser's `localStorage`).
+- No collaboration or sharing of a directory between multiple users/browsers
+  beyond manually sending someone an exported `.json` file.
+- No cross-device sync (state lives in one browser's `localStorage`); Export/
+  Import (7.9) is the closest thing to a portability mechanism, and it's a
+  manual, one-shot file transfer, not sync.
 - No audit log/export of agent actions beyond the in-session console feed
   (capped at 200 entries, DOM-only, not persisted) and whatever artifacts
   land in Drive/Gmail/Calendar/Sheets themselves.
-- No distinct failed/error state for tasks (7.1) — a failed task is
-  indistinguishable from a successfully completed one in the data model and
-  in `completedTasksCount`; the only visible trace is the SYSTEM console log
-  line, which is capped and not persisted.
+- No automatic retry or expiry of a `status: "failed"` task — it sits in the
+  queue (counting against `MAX_QUEUE`) until the user manually retries or
+  dismisses it (7.1).
 - Single LLM provider (Gemini) and one hardcoded model
   (`gemini-2.5-flash-preview-09-2025`), changed only by editing source.
-- No directory rename/delete (7.7).
 - No multi-tab support (8).
+- No "restore over itself" import — a re-imported file always lands as a
+  new, separate directory rather than overwriting the directory it was
+  originally exported from (7.9, Open questions).
 
 ## 11. Open questions
 
@@ -712,15 +891,12 @@ manually once the active task finishes.
   Gemini dependency permanent by design?
 - Is there a desired path to background/durable execution (e.g., a
   companion worker) or is "stops when the tab closes" acceptable long-term?
-- Should a failed task be surfaced/retried distinctly from a completed one
-  (see 7.1/10), or is silently treating it as completed acceptable given the
-  console log is the intended signal?
-- Should directory rename/delete be added, or is the current
-  create-and-accumulate-forever model acceptable given `localStorage`'s
-  practical size limits?
-- Should Export/Import (7.9) grow a whole-app (all-directories) backup/
-  restore mode, or does per-directory cover the real use case (sharing/
-  backing up one ecosystem)?
 - Should re-importing an exported file offer to **overwrite** the directory
   it came from (matched by name) as an alternative to always creating a new
   one, for a "restore this backup over itself" workflow?
+- Should a `status: "failed"` task ever auto-expire or auto-dismiss after
+  some time/count, or is "accumulates until the user acts" acceptable given
+  it already counts against `MAX_QUEUE` as a natural pressure valve?
+- Should Retry support an automatic backoff/retry-N-times mode, or is
+  one-attempt-at-a-time (current behavior) the intended level of manual
+  control?

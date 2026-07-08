@@ -94,11 +94,20 @@
         <button onclick="createNewWorkspacePrompt()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Create New Directory / Workspace" aria-label="Create new workspace directory">
           <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
         </button>
+        <button onclick="renameCurrentWorkspacePrompt()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Rename Current Directory" aria-label="Rename current workspace directory">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="deleteCurrentWorkspacePrompt()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-rose-400 rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Delete Current Directory" aria-label="Delete current workspace directory">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
         <span class="w-px h-4 bg-slate-800"></span>
         <button onclick="exportCurrentDirectory()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Export Current Directory (.json)" aria-label="Export current directory as a JSON file">
           <i data-lucide="download" class="w-3.5 h-3.5"></i>
         </button>
-        <button onclick="triggerImportFilePicker()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Import Directory (.json)" aria-label="Import a directory from a JSON file">
+        <button onclick="exportAllDirectories()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Export Full Backup (all directories)" aria-label="Export all directories as a full backup JSON file">
+          <i data-lucide="archive" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="triggerImportFilePicker()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Import Directory or Full Backup (.json)" aria-label="Import a directory or full backup from a JSON file">
           <i data-lucide="upload" class="w-3.5 h-3.5"></i>
         </button>
         <input type="file" id="import-file-input" accept=".json,application/json" class="hidden" onchange="handleImportFile(this)">
@@ -726,6 +735,8 @@
       const queueList = document.getElementById('task-queue-list');
       if (queueList) {
         queueList.addEventListener('click', (e) => {
+          const retryBtn = e.target.closest('.retry-task-btn');
+          if (retryBtn) { retryTask(retryBtn.dataset.taskId); return; }
           const btn = e.target.closest('.cancel-task-btn');
           if (btn) cancelTask(btn.dataset.taskId);
         });
@@ -925,6 +936,61 @@
       persistState();
     }
 
+    // Rename the *current* directory in place — moves its saved state to a new key in
+    // `workspaces` and updates `currentWorkspace` to match. Renaming is a pure key
+    // rename (agents/taskQueue/etc. are untouched), so it's safe even mid-task.
+    function renameCurrentWorkspacePrompt() {
+      const oldName = currentWorkspace;
+      const name = prompt("Rename this Workspace Directory to:", oldName);
+      if (name === null) return; // cancelled
+      const cleanName = name.trim();
+      if (!cleanName || cleanName === oldName) return;
+      if (workspaces[cleanName]) {
+        showToast("A directory with that name already exists.", "alert-triangle", "error");
+        return;
+      }
+
+      saveCurrentWorkspaceState();
+      workspaces[cleanName] = workspaces[oldName];
+      delete workspaces[oldName];
+      currentWorkspace = cleanName;
+
+      rebuildWorkspaceDropdown();
+      document.getElementById('workspace-directory-select').value = cleanName;
+
+      logConsoleEvent("SYSTEM", `Renamed directory [${oldName}] to [${cleanName}].`, "success");
+      showToast(`Renamed to: ${cleanName}`, "pencil");
+      persistState();
+    }
+
+    // Delete the *current* directory. Blocked while a task is processing (same guard as
+    // switching/preset-loading) and when it's the only remaining directory — the app
+    // always needs at least one directory to be usable.
+    function deleteCurrentWorkspacePrompt() {
+      if (isRunningTask()) {
+        showToast("Cannot delete a directory while an agent task is active.", "alert-triangle", "error");
+        return;
+      }
+      const names = Object.keys(workspaces);
+      if (names.length <= 1) {
+        showToast("Cannot delete the only remaining directory.", "alert-triangle", "error");
+        return;
+      }
+      const name = currentWorkspace;
+      if (!confirm(`Delete directory "${name}" and everything in it? This cannot be undone.`)) return;
+
+      delete workspaces[name];
+      const nextName = Object.keys(workspaces)[0];
+      loadWorkspaceState(nextName, null);
+
+      rebuildWorkspaceDropdown();
+      document.getElementById('workspace-directory-select').value = nextName;
+
+      logConsoleEvent("SYSTEM", `🗑️ Deleted directory [${name}]. Switched to [${nextName}].`, "success");
+      showToast(`Deleted directory: ${name}`, "trash-2");
+      persistState();
+    }
+
     function rebuildWorkspaceDropdown() {
       const select = document.getElementById('workspace-directory-select');
       select.innerHTML = '';
@@ -966,31 +1032,36 @@
       showToast(`Exported "${currentWorkspace}"`, "download");
     }
 
+    // Full-app backup: every directory in one file, distinguished from a single-directory
+    // export by `kind: "backup"` + a `workspaces` map (vs. a single `directory`).
+    function exportAllDirectories() {
+      saveCurrentWorkspaceState();
+      const count = Object.keys(workspaces).length;
+      const payload = {
+        agentlooperExport: 1,
+        kind: 'backup',
+        exportedAt: new Date().toISOString(),
+        currentWorkspace: currentWorkspace,
+        workspaces: workspaces
+      };
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      downloadJson(payload, `agentlooper-backup-${stamp}.json`);
+      logConsoleEvent("SYSTEM", `📤 Exported full backup (${count} director${count === 1 ? 'y' : 'ies'}) to a JSON file.`, "success");
+      showToast(`Exported full backup (${count} director${count === 1 ? 'y' : 'ies'})`, "archive");
+    }
+
     function triggerImportFilePicker() {
       document.getElementById('import-file-input').click();
     }
 
-    async function handleImportFile(inputEl) {
-      const file = inputEl.files[0];
-      inputEl.value = ''; // reset so re-selecting the same file still fires 'change'
-      if (!file) return;
+    // Validate + land one directory's data under a unique key in `workspaces`. Shared by
+    // the single-directory and full-backup import paths below. Returns the actual name
+    // used (which may differ from `requestedNameRaw` on a collision), or null if `dir`
+    // isn't a recognizable Directory shape.
+    function importSingleDirectoryData(requestedNameRaw, dir) {
+      if (!dir || typeof dir.agents !== 'object' || !Array.isArray(dir.taskQueue)) return null;
 
-      let parsed;
-      try {
-        parsed = JSON.parse(await file.text());
-      } catch (err) {
-        showToast("Import failed: not valid JSON.", "alert-triangle", "error");
-        return;
-      }
-
-      const dir = parsed && parsed.directory;
-      if (!dir || typeof dir.agents !== 'object' || !Array.isArray(dir.taskQueue)) {
-        showToast("Import failed: not a recognized AgentLooper directory export.", "alert-triangle", "error");
-        return;
-      }
-
-      // Land under a unique directory name so an import never overwrites existing work.
-      const requestedName = (typeof parsed.directoryName === 'string' && parsed.directoryName.trim()) || 'Imported Directory';
+      const requestedName = (typeof requestedNameRaw === 'string' && requestedNameRaw.trim()) || 'Imported Directory';
       let importName = requestedName;
       let suffix = 2;
       while (workspaces[importName]) {
@@ -1008,17 +1079,70 @@
         completedTasksCount: typeof dir.completedTasksCount === 'number' ? dir.completedTasksCount : 0,
         mockGDriveFiles: Array.isArray(dir.mockGDriveFiles) ? dir.mockGDriveFiles : []
       };
-      rebuildWorkspaceDropdown();
+      return importName;
+    }
 
+    // Switch to `targetName` after an import, unless a task is actively processing in the
+    // directory we're currently on (same guard as every other directory-switching action).
+    function switchToImportedOrDefer(targetName, successLogMsg, successToastMsg) {
+      rebuildWorkspaceDropdown();
       if (isRunningTask()) {
-        showToast(`Imported "${importName}" — switch to it once the active task finishes.`, "alert-triangle", "error");
+        showToast(`${successToastMsg} — switch to it once the active task finishes.`, "alert-triangle", "error");
       } else {
-        document.getElementById('workspace-directory-select').value = importName;
-        loadWorkspaceState(importName, null);
-        logConsoleEvent("SYSTEM", `📥 Imported directory [${importName}] from a JSON file.`, "success");
-        showToast(`Imported and switched to "${importName}"`, "check-circle");
+        document.getElementById('workspace-directory-select').value = targetName;
+        loadWorkspaceState(targetName, null);
+        logConsoleEvent("SYSTEM", successLogMsg, "success");
+        showToast(`${successToastMsg} and switched`, "check-circle");
       }
       persistState();
+    }
+
+    async function handleImportFile(inputEl) {
+      const file = inputEl.files[0];
+      inputEl.value = ''; // reset so re-selecting the same file still fires 'change'
+      if (!file) return;
+
+      let parsed;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch (err) {
+        showToast("Import failed: not valid JSON.", "alert-triangle", "error");
+        return;
+      }
+
+      // Single-directory export: { directory: {...}, directoryName }
+      if (parsed && parsed.directory) {
+        const importName = importSingleDirectoryData(parsed.directoryName, parsed.directory);
+        if (!importName) {
+          showToast("Import failed: not a recognized AgentLooper directory export.", "alert-triangle", "error");
+          return;
+        }
+        switchToImportedOrDefer(importName, `📥 Imported directory [${importName}] from a JSON file.`, `Imported "${importName}"`);
+        return;
+      }
+
+      // Full-backup export: { kind: "backup", workspaces: { name: directory, ... } }
+      if (parsed && parsed.workspaces && typeof parsed.workspaces === 'object') {
+        const importedNames = Object.entries(parsed.workspaces)
+          .map(([name, dir]) => importSingleDirectoryData(name, dir))
+          .filter(Boolean);
+        if (!importedNames.length) {
+          showToast("Import failed: backup file contained no valid directories.", "alert-triangle", "error");
+          return;
+        }
+        // Prefer restoring the backup's own active directory, if it landed without a rename.
+        const preferred = typeof parsed.currentWorkspace === 'string' ? parsed.currentWorkspace : null;
+        const switchTarget = (preferred && importedNames.includes(preferred)) ? preferred : importedNames[0];
+        const count = importedNames.length;
+        switchToImportedOrDefer(
+          switchTarget,
+          `📥 Imported ${count} director${count === 1 ? 'y' : 'ies'} from a full backup file.`,
+          `Imported ${count} director${count === 1 ? 'y' : 'ies'} from backup`
+        );
+        return;
+      }
+
+      showToast("Import failed: not a recognized AgentLooper export file.", "alert-triangle", "error");
     }
 
     // Dynamic AI Architect Generator utilizing structured JSON responses from Gemini
@@ -1725,26 +1849,43 @@ Your output must be purely JSON, matching this schema:
 
       const task = taskQueue[runnableIndex];
       task.status = 'processing';
+      delete task.error;
       processingTask = true;
       rebuildQueueUI();
 
+      let failed = false;
+      let errorMessage = null;
       try {
         await executeTaskNode(task);
       } catch (err) {
         console.error("Task Engine error:", err);
         logConsoleEvent("SYSTEM", `Task failure on execution pipeline: ${err.message}`, "error");
+        failed = true;
+        errorMessage = err.message;
       } finally {
         // Handle recurrence / iteration loop parameters
         if (task.aborted) {
           // The task was cancelled mid-flight — cancelTask already removed it from the
           // queue, so don't re-index/splice (that could delete an unrelated task) or count it.
+        } else if (failed && task.type === 'loop' && task.currentIteration < task.maxIterations) {
+          // A mid-loop failure doesn't kill the loop — surface it, but keep iterating.
+          task.currentIteration++;
+          task.status = 'pending';
+          task.scheduledTime = Date.now() + (task.intervalSec * 1000);
+          task.lastError = errorMessage;
+          logConsoleEvent("SYSTEM", `Re-scheduling loop task iteration ${task.currentIteration}/${task.maxIterations} to target agent '${task.toAgent}' in ${task.intervalSec}s (previous iteration failed: ${errorMessage})`, "error");
         } else if (task.type === 'loop' && task.currentIteration < task.maxIterations) {
           task.currentIteration++;
           task.status = 'pending';
           task.scheduledTime = Date.now() + (task.intervalSec * 1000);
           logConsoleEvent("SYSTEM", `Re-scheduling loop task iteration ${task.currentIteration}/${task.maxIterations} to target agent '${task.toAgent}' in ${task.intervalSec}s`, "info");
+        } else if (failed) {
+          // Once task, or a loop task that failed on its final iteration: surface as a
+          // distinct failed state instead of silently counting it as completed.
+          task.status = 'failed';
+          task.error = errorMessage;
         } else {
-          // Task completes completely
+          // Task completes successfully
           const idx = taskQueue.indexOf(task);
           if (idx !== -1) taskQueue.splice(idx, 1);
           completedTasksCount++;
@@ -2527,12 +2668,24 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         let statusTag = `<span class="px-1.5 py-0.5 rounded text-[11px] font-bold uppercase bg-slate-950 text-slate-400 border border-slate-800">In ${remainsSec}s</span>`;
         if (task.status === 'processing') {
           statusTag = `<span class="px-1.5 py-0.5 rounded text-[11px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">Running</span>`;
+        } else if (task.status === 'failed') {
+          statusTag = `<span class="px-1.5 py-0.5 rounded text-[11px] font-bold uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20" title="${escapeHtml(task.error || 'Unknown error')}">Failed</span>`;
         }
 
         let loopTag = '';
         if (task.type === 'loop') {
           loopTag = `<span class="text-[11px] px-1.5 py-0.5 bg-brand-500/15 border border-brand-500/20 text-brand-400 rounded-full font-bold">Iter ${task.currentIteration}/${task.maxIterations}</span>`;
         }
+
+        const errorLine = (task.status === 'failed' && task.error)
+          ? `<p class="text-[11px] text-rose-400 truncate mt-1">⚠ ${escapeHtml(task.error)}</p>`
+          : '';
+
+        const retryButton = task.status === 'failed'
+          ? `<button data-task-id="${escapeHtml(task.id)}" class="retry-task-btn min-w-[32px] min-h-[32px] text-slate-500 hover:text-emerald-400 p-1.5 rounded hover:bg-emerald-500/10 transition-colors" title="Retry Task" aria-label="Retry this failed task">
+              <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+            </button>`
+          : '';
 
         div.className = "p-2.5 bg-slate-950/60 border border-slate-900 rounded-xl flex items-center justify-between gap-2.5";
         div.innerHTML = `
@@ -2543,9 +2696,11 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
               ${loopTag}
             </div>
             <p class="text-[11px] text-slate-400 truncate mt-1 italic">${escapeHtml(task.promptText)}</p>
+            ${errorLine}
           </div>
-          <div>
-            <button data-task-id="${escapeHtml(task.id)}" class="cancel-task-btn min-w-[32px] min-h-[32px] text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition-colors" title="Abort Loop" aria-label="Abort this task">
+          <div class="flex items-center gap-1">
+            ${retryButton}
+            <button data-task-id="${escapeHtml(task.id)}" class="cancel-task-btn min-w-[32px] min-h-[32px] text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition-colors" title="${task.status === 'failed' ? 'Dismiss' : 'Abort Loop'}" aria-label="${task.status === 'failed' ? 'Dismiss this failed task' : 'Abort this task'}">
               <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -2565,6 +2720,20 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         rebuildQueueUI();
         persistState();
       }
+    }
+
+    // Re-queue a failed task for another attempt: back to 'pending', due immediately,
+    // with its error cleared. Only meaningful for tasks currently 'status: "failed"'.
+    function retryTask(taskId) {
+      const task = taskQueue.find(t => t.id === taskId);
+      if (!task || task.status !== 'failed') return;
+      task.status = 'pending';
+      task.scheduledTime = Date.now();
+      delete task.error;
+      logConsoleEvent("SYSTEM", `🔁 Retrying failed task to Agent [${task.toAgent}].`, "info");
+      showToast("Task requeued for retry.", "rotate-cw");
+      rebuildQueueUI();
+      persistState();
     }
 
     function deregisterAgent(agentId) {
