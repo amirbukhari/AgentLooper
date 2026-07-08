@@ -1,0 +1,633 @@
+# AgentLooper — Product Requirements Document
+
+**Status:** Draft (reverse-engineered from current implementation, verified against `index.html`)
+**Owner:** Amir Bukhari
+**Last updated:** 2026-07-08
+
+## 1. Summary
+
+AgentLooper is a browser-only, single-page simulator for autonomous multi-agent
+workspaces. Users define LLM-backed "agents" with personas, watch them spawn,
+delegate to, and schedule one another on a live tick loop, and — once signed in
+with a Google account — let those agents read/write real Google Drive files,
+send/draft Gmail, manage Calendar events, and read/write Sheets. There is no
+backend: all state, orchestration, and API calls happen client-side in
+`index.html`, with Google OAuth providing the only external trust boundary.
+
+The product exists to let a single user experiment with emergent multi-agent
+behavior (spawn chains, delegation graphs, scheduled loops) against both a
+mock sandbox and their real Google Workspace account, with enough guardrails
+that an unsupervised agent chain can't run away or take unwanted real-world
+actions (e.g., sending an email) without explicit opt-in.
+
+**Done, for this PRD's scope:** an implementer can read this document alone
+and reproduce the current `index.html` behavior byte-for-byte in intent
+(exact data shapes, exact tag grammar, exact failure behavior) without
+reading the source or asking a clarifying question.
+
+## 2. Goals
+
+- Let a user create and run multiple LLM agents that can autonomously spawn,
+  trigger, and schedule each other via inline command tags in model output.
+- Provide a zero-install, zero-backend way to try this (open `index.html` or a
+  static Pages deployment) with a **sandbox mode** requiring no Google account.
+- Let a signed-in user point agents at their **real** Google Drive, Gmail,
+  Calendar, and Sheets, using only browser-side OAuth (no server, no stored
+  secrets).
+- Prevent runaway agent chains (infinite spawn/trigger/schedule loops) from
+  exhausting the user's Gemini quota or API rate limits.
+- Prevent agents from taking irreversible real-world actions (sending email)
+  without an explicit, visible, revocable user opt-in.
+- Persist a user's work (agents, task queue, sandbox files) across page
+  reloads, and let them run multiple independent agent ecosystems
+  ("directories") side by side.
+
+## 3. Non-goals
+
+- No multi-user / multi-tenant support — this is a single-browser,
+  single-Google-account tool with no shared server state.
+- No support for LLM providers other than Google Gemini.
+- No mobile-specific UI; desktop browser is the target.
+- No durable/server-side agent execution — if the tab closes, the tick loop
+  stops (state up to that point is saved to `localStorage`, but nothing
+  continues running in the background).
+- No fine-grained per-tool permissioning beyond the existing Gmail
+  autonomy gate — Calendar and Sheets writes are never gated or drafted,
+  only Gmail sends are (see 7.4).
+- No cross-tab/cross-window coordination: the same directory open in two
+  tabs at once is unsupported (see 7.7).
+- No accessibility conformance target (e.g., a WCAG level) for this
+  iteration — the UI carries some ARIA attributes incidentally but is not
+  audited or tested against a standard.
+- No directory rename or delete capability — directories, once created,
+  persist for the life of the browser's `localStorage` (see 7.7).
+
+## 4. Target user
+
+A single technical user (e.g., a developer or hobbyist) experimenting with
+agentic/multi-agent LLM behavior who wants to:
+- Prototype agent-to-agent delegation patterns without standing up
+  infrastructure.
+- Optionally connect real Google Workspace data/actions to observe agents
+  taking real, useful actions, while keeping a manual safety net on the one
+  action that leaves the account (email).
+
+## 5. Core concepts
+
+- **Agent** — a named persona with a system-prompt-like description, a memory
+  log, and a color theme. Agents respond to tasks by calling the Gemini API
+  and can emit inline command tags that the app parses out of the response
+  text. Full schema: 6.1.
+- **Directory** — an isolated workspace: its own set of agents, task queue,
+  sandbox files, and UI graph layout. Users can create multiple directories
+  and switch between them; each is persisted independently in
+  `localStorage`. Full schema: 6.3.
+- **Task queue / scheduler** — a live 1-second tick loop that dequeues
+  pending, due queue entries (oldest-array-index first) and dispatches them
+  to the named agent, one at a time (the app never runs two tasks
+  concurrently). Full schema: 6.2.
+- **Command tags** — the mechanism by which an agent's text output becomes an
+  action. Full per-tag grammar and failure behavior: 7.1 and 7.3.
+- **Sandbox mode** — the default, no-auth mode. Agents only see the
+  `WRITE_GDRIVE`/`READ_GDRIVE` mock file tools; Gmail/Calendar/Sheets tools
+  are not advertised to the model until a real Google account is connected.
+- **Presets** — built-in starter ecosystems that seed a directory with a
+  ready-made set of agents: a **band-manager** preset (default) and a
+  **code-generation** agent team.
+- **AI Architect ecosystem builder** — a one-shot Gemini call, distinct from
+  a preset, that generates a 2–4-agent team from a free-text goal the user
+  types in, and adds it into the current directory. Full spec: 7.8.
+
+## 6. Data model
+
+All entities below live in browser memory during a session and are
+serialized verbatim (via `JSON.stringify`) into `localStorage` on
+`persistState()`. There is no server-side or database representation.
+
+### 6.1 Agent
+
+Stored as `agents[id]` inside the active directory.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string | yes | The object key. Derived from the user/agent-supplied name by stripping every character that is not `[A-Za-z0-9]` (`name.replace(/[^a-zA-Z0-9]/g, "")`). If this produces an empty string, creation is rejected — see 7.1. |
+| `persona` | string | yes | Free-text system-prompt-style description, injected verbatim into the Gemini system instruction for that agent. |
+| `theme` | string | yes | UI color tag only — one of `brand`, `amber`, `emerald`, `rose`, `cyan`. Manually created / preset agents get an explicit value (default `brand`); agents auto-spawned via `[CREATE_AGENT]` or trigger-fallback get one picked at random from `["emerald","rose","cyan","amber","brand"]`. |
+| `memory` | string[] | yes | A rolling log, newest-first (`unshift`). Two entries are added per completed task: `"[Received Task Prompt]: <first 80 chars of task>..."` then `"[AI Output]: <first 100 chars of Gemini's response>..."`. Capped at 50 entries (oldest popped once exceeded). Seeded with one string at creation (e.g. `"Manually registered and spawned by User workspace command."`). |
+| `createdTime` | Date | yes | Set once at creation; never updated. |
+
+**Uniqueness:** `id` must be unique within a directory. The manual "create
+agent" form and the `[CREATE_AGENT]` tag both check `agents[id]` first and
+reject the operation (toast or console message, no state change) if it
+already exists. Two paths do **not** perform this check and will silently
+overwrite an existing agent with the same id: the bulk "AI ecosystem
+generator" (`autogenerateEcosystem`) and the `[TRIGGER_AGENT]` fallback that
+auto-spawns a missing target (see 7.1) — both assign `agents[cleanName] = {...}`
+unconditionally.
+
+### 6.2 Task queue entry
+
+Held in the active directory's `taskQueue` array; the scheduler tick scans
+it in array order and runs the first entry that is both `status: "pending"`
+and due (`scheduledTime <= Date.now()`).
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string | yes | `crypto.randomUUID()`. |
+| `fromAgent` | string | yes | Originating agent's `id`, or the literal string `"User"` for manually enqueued tasks, or `"GDrive"` for the follow-up task queued by a `[READ_GDRIVE]`/`[READ_SHEET]`. |
+| `toAgent` | string | yes | Target agent's `id`. |
+| `type` | `"once"` \| `"loop"` | yes | |
+| `promptText` | string | yes | The task text sent to the agent as the Gemini user turn. |
+| `scheduledTime` | number (epoch ms) | yes | |
+| `status` | `"pending"` \| `"processing"` | yes | There is no `"failed"`/`"error"`/`"done"` status — see 7.1 Task failure behavior. |
+| `intervalSec` | number | only if `type: "loop"` | Clamped to `[5, 3600]` via `clampLoopInterval` (5 = `MIN_LOOP_INTERVAL_SEC`, 3600 = `MAX_LOOP_INTERVAL_SEC`); unparsable input falls back to 10 before clamping. |
+| `currentIteration` | number | only if `type: "loop"` | Starts at 1. |
+| `maxIterations` | number | only if `type: "loop"` | Clamped to `[1, 20]` via `clampLoopIterations`; unparsable input falls back to 3 before clamping. |
+| `aborted` | boolean | optional | Set `true` and the entry is immediately spliced out of the queue when the user cancels it from the UI. |
+
+### 6.3 Directory (workspace)
+
+Held in a top-level `workspaces` object keyed by the directory's **raw,
+user-entered name**, trimmed but *not* alphanumeric-sanitized (unlike agent
+ids — directory names may contain spaces/punctuation and are case-sensitive
+exact-match keys).
+
+| Field | Type | Notes |
+|---|---|---|
+| `agents` | `{ [agentId]: Agent }` | |
+| `taskQueue` | `TaskQueueEntry[]` | |
+| `positions` | `{ [nodeId]: { x: number, y: number } }` | UI graph-layout coordinates; always seeded with `User` (`{x:50,y:15}`) and `GDrive` (`{x:85,y:18}`) pseudo-nodes. |
+| `completedTasksCount` | number | Incremented once per task removed from the queue — **including tasks whose Gemini call errored**; see 7.1. |
+| `mockGDriveFiles` | `{ name: string, size: string, content: string, updated: string }[]` | Sandbox-mode virtual file store. `size` is a display string (e.g. `"42 B"`), not a number. Ignored in real-Drive mode. |
+
+### 6.4 Persistence keys
+
+| Key | Store | Shape | Notes |
+|---|---|---|---|
+| `agentlooper_state_v1` | `localStorage` | `{ workspaces: { [directoryName]: Directory }, currentWorkspace: string }` | Written on `beforeunload` and after most state-mutating actions. No schema-version field — a future field rename/removal is not migration-safe against old saved state. |
+| `agentlooper_autosend` | `localStorage` | `"1"` \| `"0"` | The human-in-the-loop email gate (7.4), stored independently of any directory. |
+| `agentos_google_token` | `sessionStorage` | `{ access_token: string, expires_at: number (epoch ms) }` | The live Google OAuth access token. Deliberately **not** written to `localStorage` — cleared when the tab session ends, and never included in the directory blob. |
+
+On boot, any task queue entry restored with `status: "processing"` is reset
+to `"pending"` (recovers a task that was mid-execution when the tab closed).
+
+## 7. Functional requirements
+
+### 7.1 Agent orchestration and command tags
+
+- Users can manually create an agent (name + persona + theme) via a form,
+  and manually enqueue a task for any existing agent (target, type
+  `once`/`loop`, prompt, and — for `loop` — interval/iteration count).
+- Users can inspect any agent read-only via a modal
+  (`inspectAgent`/`agent-inspect-modal`) showing its `id`, full `persona`
+  text, and its full `memory` array rendered newest-first (an empty
+  `memory` array shows the placeholder text "Ephemeris logs are currently
+  empty. Execute loops to gather history." instead of an empty list). A
+  parallel read-only modal exists for inspecting a sandbox Drive file's
+  content. Both modals close via an explicit close control or the `Escape`
+  key (whichever modal is open takes precedence: file-inspect modal is
+  checked first, then agent-inspect modal — only one is ever open at a
+  time).
+- Agents act by emitting inline tags anywhere in their Gemini response text;
+  the app parses all occurrences of all tag types out of that text with
+  regexes and executes each one, in the fixed order listed below, once per
+  completed agent response. Unrecognized/malformed tag text (e.g., missing
+  a required attribute, or not matching the tag's exact `key="value"`
+  grammar) is not detected as an error — it simply fails to match the regex
+  and is left inert in the displayed response text; no warning is logged
+  for this case specifically (only the explicit rejections below produce a
+  log line). Worked example: an agent emitting
+  `[CREATE_AGENT: name="Bob"]` (persona attribute omitted) does not match
+  the `[CREATE_AGENT: name="...", persona="..."]` regex at all — no agent is
+  created, no cap check runs, no log line appears, and the literal text
+  `[CREATE_AGENT: name="Bob"]` remains visible in the agent's displayed
+  response. The same applies to any other tag in the table below missing a
+  required attribute or using single quotes / no quotes around a value.
+- The scheduler tick runs on a 1-second `setInterval`, processes **at most
+  one** due `pending` entry per tick, and will not start a new one while
+  another is `status: "processing"` (`processingTask` flag).
+
+**Per-tag grammar and behavior:**
+
+| Tag | Required attributes | Behavior on success | Behavior on failure/edge case |
+|---|---|---|---|
+| `[CREATE_AGENT: name="...", persona="..."]` | `name`, `persona` (both required by regex; tag doesn't match without both) | Registers a new agent (6.1) with a random theme. | Empty name after sanitization → silently skipped (no log). Name already registered → skipped, logs `"Agent '<name>' already registered. Skipping dynamic spawn."`. Directory at `MAX_AGENTS` (40) → skipped, logs the agent-cap error. |
+| `[TRIGGER_AGENT: name="...", task="..."]` | `name`, `task` | Enqueues a `once` task to the target agent, `scheduledTime = now`. | Empty target name → silently skipped. Target agent doesn't exist **and** directory is at `MAX_AGENTS` → skipped, logs the agent-cap error. Target agent doesn't exist and directory has capacity → **auto-spawns a generic fallback clone agent** (persona: `"You are a helper clone agent named <name>. Deliver logical structured feedback."`), logs `"Cannot trigger '<name>': Agent does not exist. Spawning standard clone..."`, then proceeds to enqueue the task on it. Queue at `MAX_QUEUE` (60) → skipped, logs the queue-full error. |
+| `[SCHEDULE_LOOP: name="...", interval_sec="N", limit="N", task="..."]` | `name`, `interval_sec`, `limit`, `task` | Enqueues a `loop` task, first run at `now + interval_sec*1000`. | Empty target name → silently skipped. Target agent doesn't exist → skipped **without auto-spawning** (unlike `TRIGGER_AGENT`), logs `"Loop target '<name>' missing. Loop scheduling skipped."`. Queue at `MAX_QUEUE` → skipped, logs the queue-full error. `interval_sec`/`limit` are clamped per 6.2, not rejected. |
+| `[WRITE_GDRIVE: filename="...", content="..."]` | `filename`, `content` | Sandbox: upserts into `mockGDriveFiles` by exact name match. Real Drive: searches the app's Drive workspace folder for a file with that exact name and PATCHes it, or creates it via multipart upload if absent. | Real-Drive mode without an authenticated session/workspace folder → logs an "unauthenticated" error, no queue/state change. Real-Drive API failure → caught, logs a generic connection-failure error. |
+| `[READ_GDRIVE: filename="..."]` | `filename` | Looks up the file by exact name; on found, enqueues a `once` follow-up task back to the requesting agent (`fromAgent: "GDrive"`, `scheduledTime: now + 1000`) whose prompt embeds the file's full content. | File not found (sandbox or real) → logs a "not found" error, no follow-up task. Unauthenticated in real-Drive mode → logs an "unauthenticated" error. |
+| `[SEND_GMAIL: to="...", subject="...", body="..."]` | `to`, `subject` (may be empty string), `body` | If the master autonomous-send gate (7.4) is on, sends the email via Gmail API; if off, saves it as a Gmail draft instead. | Google tools not connected (`googleToolsReady()` false) → skipped, logs a "sign in" error, no draft/send attempted. API call throws → caught, logs a Gmail error. |
+| `[DRAFT_GMAIL: to="...", subject="...", body="..."]` | same as above | Always saves a Gmail draft, regardless of the autonomous-send gate. | Same failure modes as `SEND_GMAIL`. |
+| `[CREATE_EVENT: title="...", start="...", end="...", details="..."]` | `title`, `start` required; `end` and `details` optional (regex allows them to be omitted entirely) | Creates a primary-calendar event via the Calendar API. | Not connected → skipped, logs a "sign in" error. API call throws (e.g., invalid ISO datetime) → caught, logs an error naming the likely cause. |
+| `[LIST_EVENTS]` or `[LIST_EVENTS: max="N"]` | none (`max` optional, default 5) | `max` is clamped to `[1, 25]`; fetches upcoming events and enqueues the results back to the agent as context (implementation detail of `calendarListTool`). | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error. |
+| `[WRITE_SHEET: name="...", values="a,b ; c,d"]` | `name`, `values` | Creates/overwrites a spreadsheet by name; rows split on `;`, cells split on `,`. | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error. |
+| `[READ_SHEET: name="..."]` | `name` | Reads a spreadsheet's contents back to the agent (implementation detail of `sheetReadTool`). | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error. |
+
+**Task failure behavior:** if `executeTaskNode` throws for any reason
+(target agent no longer exists, or `callGemini` exhausts its retries — see
+7.3), the scheduler's `catch` block logs a single
+`"Task failure on execution pipeline: <message>"` SYSTEM error line and then
+falls through to the **same** completion/reschedule logic used for success:
+a `once` task is still removed from the queue and still increments
+`completedTasksCount`; a `loop` task not yet on its last iteration is still
+rescheduled for its next interval. **There is no distinct failed/error task
+state** — a failed task is indistinguishable from a completed one in the
+data model, and the agent's `memory` is not updated for a failed attempt
+(the memory-append lines run only after a successful `callGemini` return).
+
+### 7.2 Safety caps (runaway-loop protection)
+
+- **Max agents per directory:** 40 (`MAX_AGENTS`). Enforced identically for
+  manual creation, `[CREATE_AGENT]`, `[TRIGGER_AGENT]`'s auto-spawn
+  fallback, and the bulk AI-ecosystem generator.
+- **Max queued tasks:** 60 (`MAX_QUEUE`), checked before every enqueue
+  (manual, `[TRIGGER_AGENT]`, `[SCHEDULE_LOOP]`).
+- **Scheduled-loop interval:** clamped to `[5, 3600]` seconds
+  (`MIN_LOOP_INTERVAL_SEC`–`MAX_LOOP_INTERVAL_SEC`); values outside this
+  range are silently clamped, not rejected.
+- **Scheduled-loop iterations:** clamped to `[1, 20]` (`MAX_LOOP_ITERATIONS`
+  ceiling; the floor of 1 comes from `Math.max(..., 1)` in
+  `clampLoopIterations`).
+- **Console feed cap:** 200 blocks (`MAX_CONSOLE_BLOCKS`); oldest entries
+  trimmed from the DOM once exceeded — this affects only the on-screen feed,
+  not any persisted log (there is no persisted action log; see 8).
+- All caps apply uniformly whether the triggering actor is the user (via UI)
+  or another agent (via inline tag); exceeding any cap never throws — it
+  always degrades to a skipped action plus a logged SYSTEM message.
+
+### 7.3 Google Workspace integration
+
+- A single Google OAuth consent (Google Identity Services token client)
+  grants scopes for: Gemini (`cloud-platform`), Drive (`drive.file`), Gmail
+  (`gmail.compose`), Calendar (`calendar.events`), Sheets (`spreadsheets`),
+  and `userinfo.email`.
+- The resulting access token and its expiry are held in
+  `sessionStorage["agentos_google_token"]` (6.4) — never in `localStorage`.
+  On boot, `restoreGoogleSession()` reuses the stored token only if it has
+  more than 30 seconds of validity left; otherwise it's discarded and the
+  user must sign in again (no silent refresh).
+- **Token expiry/revocation mid-session:** every Gmail/Calendar/Sheets/
+  Gemini API call goes through a shared request path that treats HTTP `401`
+  and `403` as permanent for the current token: it clears
+  `googleAuth.accessToken`, deletes the `sessionStorage` entry, updates the
+  sign-in UI to signed-out, and throws an error surfaced to the console feed
+  telling the user to sign in again. A scheduled loop that hits this simply
+  fails that iteration per 7.1's task-failure behavior; it is not
+  auto-paused or specially flagged.
+- **Gemini API error handling (`callGemini`):** up to 5 attempts with
+  exponential backoff starting at 1000ms (doubling each retry, honoring a
+  numeric `Retry-After` response header when present) for network-transport
+  errors, HTTP `429`, and HTTP `5xx`. HTTP `401`/`403` are treated as
+  permanent (see above, no retry). Other `4xx` responses are treated as
+  permanent (no retry). An empty/blocked model response (no `text` in the
+  candidate) fails immediately without retrying. Exhausting all retries
+  throws, which is caught by the task-failure path in 7.1.
+- After sign-in, the app detects and warns the user (toast + console log +
+  `console.warn`) if the `cloud-platform` scope was not actually granted
+  (e.g., the user unchecked it in the consent screen), since Gemini calls
+  will otherwise fail with an opaque 403.
+- A live **Connectors panel** shows per-service (Gmail, Calendar, Sheets)
+  connection status and a short recent-activity log
+  (`logConnectorActivity`), populated from the same tag-execution paths in
+  7.1.
+- Gmail, Calendar, and Sheets tags are only advertised to the model in its
+  system instruction when `googleToolsReady()` is true (i.e., real Google
+  auth is active); in sandbox mode the model is never told these tools
+  exist, though the tags would still no-op safely (logged error) if an
+  agent emitted them anyway.
+- Real Drive mode scopes all agent Drive reads/writes to a single app-owned
+  folder (`DRIVE_WORKSPACE_FOLDER_NAME`), consistent with the `drive.file`
+  scope; sandbox mode uses the in-memory `mockGDriveFiles` array instead
+  (6.3).
+
+### 7.4 Human-in-the-loop email gate
+
+- A master toggle, **"Allow autonomous email sending"**
+  (`allowAutonomousSend`), defaults to **off** and persists to
+  `localStorage["agentlooper_autosend"]` independently of any directory.
+- While off, any `[SEND_GMAIL]` tag is converted to a Gmail **draft**
+  instead of being sent — nothing leaves the user's account without the
+  toggle being explicitly turned on.
+- `[DRAFT_GMAIL]` always creates a draft regardless of the toggle.
+- The toggle is a manual UI checkbox; no code path lets an agent tag change
+  it. This gate covers Gmail sends only — Calendar event creation and
+  Sheets writes are never gated or drafted (see Non-goals, 3).
+
+### 7.5 Persistence
+
+- `persistState()` writes `workspaces` and `currentWorkspace` to
+  `localStorage["agentlooper_state_v1"]` (6.4) on `beforeunload` and after
+  most mutating actions (agent create/deregister, task enqueue/cancel,
+  directory create/switch, Gmail/Calendar/Sheets/Drive tag execution).
+- On boot, `loadPersistedState()` restores this blob if present and valid
+  (a non-empty `workspaces` object), resets any `"processing"` task back to
+  `"pending"` (6.4), and falls back to seeding the default band-manager
+  preset only if no valid saved state exists.
+- The Google OAuth token is never part of this persisted blob (7.3) — a
+  restored session always requires either a still-valid `sessionStorage`
+  token or a fresh sign-in.
+
+### 7.6 Presets
+
+- Two built-in presets, keyed `band` (default) and a code-generation team,
+  each defining a fixed set of agents (name, persona, theme) and an
+  `initialTask` used to pre-fill the manual task-prompt field.
+- A preset only seeds a directory when that directory currently has **zero**
+  agents (`Object.keys(state.agents).length === 0`) — loading a preset into
+  a directory that already has agents is a no-op for seeding purposes.
+- Loading a preset via the UI is blocked with a toast
+  (`"Clear active running tasks before loading presets."`) while any task in
+  the directory is `status: "processing"`.
+
+### 7.7 Directory lifecycle
+
+- **Create:** via a native browser `prompt()` dialog asking for a name. The
+  name is trimmed but not otherwise sanitized (may contain any characters).
+  Creation is rejected with a toast if a directory with that **exact**
+  string already exists (`workspaces[name]` truthy check, case-sensitive).
+  A newly created directory starts with zero agents, an empty task queue,
+  and no sandbox files (the default preset is *not* auto-seeded into an
+  explicitly-created directory — only the initial boot workspace is).
+- **Switch:** selecting a different directory from the dropdown saves the
+  current directory's live state, then loads the target directory's saved
+  state into the active in-memory variables (`agents`, `taskQueue`, etc.).
+  Switching is blocked with a toast
+  (`"Cannot switch workspaces while an agent task is active."`) while any
+  task is `status: "processing"`; the dropdown selection is reverted in
+  that case.
+- **Rename / delete:** **not implemented.** There is no code path to rename
+  or remove a directory once created; it persists in `localStorage`
+  indefinitely (see Non-goals, 3). This is a deliberate current-state
+  limitation, not an oversight to silently work around.
+- **Concurrency:** only the active directory's task queue is ever ticked —
+  switching away stops that directory's scheduler from running (its
+  `taskQueue` array is saved as static data, not iterated again until it's
+  reactivated). Two directories never run concurrently in one tab.
+
+### 7.8 AI Architect ecosystem builder (`autogenerateEcosystem`)
+
+A separate, one-shot Gemini call — distinct from the per-agent task calls in
+7.1 — that bulk-generates a small multi-agent team from a single free-text
+goal, additively into the current directory.
+
+- **Input:** a single free-text "goal" string from a dedicated UI field. An
+  empty/whitespace-only goal is rejected client-side with a toast
+  ("Please describe what ecosystem you want to build.") and no API call is
+  made.
+- **Request:** one `callGemini` call (same retry/backoff policy as 7.3) with
+  a fixed architect system prompt instructing the model to design 2–4
+  agents, and `generationConfig.responseSchema` set to a structured JSON
+  schema requiring:
+  - `agents`: array of `{ name: string, persona: string, theme: string }`
+    (all three required per item).
+  - `initialTask`: `{ targetAgent: string, prompt: string }` (both required).
+- **On success:** the raw response text is `JSON.parse`d (a parse failure —
+  e.g., the model returning non-conforming text — is caught, see Failure
+  below). Each `agents[]` entry is added via the **same** alphanumeric-name
+  sanitization as 6.1, additively (existing agents in the directory are
+  never removed or overwritten by this path unless an existing agent
+  happens to share the sanitized name — see the 6.1 collision note: this
+  path assigns unconditionally without an existence check). Each generated
+  agent respects `MAX_AGENTS` individually — an agent that would exceed the
+  cap is skipped (logged) while agents already under the cap still get
+  created. After all agents are processed: the manual task-prompt field is
+  pre-filled with `initialTask.prompt`, and the manual task-target dropdown
+  is set to `initialTask.targetAgent` (sanitized the same way) if that
+  agent exists in the directory, otherwise it falls back to whatever agent
+  is first in the directory's `agents` object — the task is **not**
+  automatically enqueued; the user must submit it manually. State is
+  persisted (`persistState()`) after a successful run.
+- **Failure:** a thrown error at any step (Gemini call exhausts retries,
+  non-JSON or schema-violating response, etc.) is caught, logs
+  `"Failed to generate architecture: <message>"` to the SYSTEM console feed,
+  and shows an "Architecture generation failed." toast. No partial agents
+  from a failed run are added (the `forEach` that creates agents only runs
+  after a successful parse). The trigger button is re-enabled and its label
+  restored in a `finally` block regardless of outcome.
+
+- **No backend / no server-side secrets.** The entire app is static
+  (`index.html` + assets); the OAuth client ID is public by design, no
+  client secret is ever used or stored.
+- **Deployment:** pushing to the default branch auto-deploys to GitHub
+  Pages via `.github/workflows/pages.yml`; the "build" is a direct upload of
+  the repository contents (minus `.git`/`.github`).
+- **Browser/runtime requirements:** requires a secure context (HTTPS or
+  `localhost`) — both Google Identity Services sign-in and the app's use of
+  `crypto.randomUUID()` (task queue entry ids) require one; it will not
+  function correctly (sign-in cannot work, and depending on the browser
+  `crypto.randomUUID` may be unavailable) when opened via `file://`.
+  Supported/tested browsers: the latest stable release of Chrome, Edge,
+  Firefox, and Safari on desktop Windows/macOS/Linux. No support for
+  Internet Explorer or legacy (pre-Chromium) Edge. Sandbox mode has no
+  server-communication requirement and works from any origin, including
+  `file://`, on the same browser set.
+- **Accessibility:** no WCAG or other conformance target is set for this
+  iteration (explicit non-goal, 3); the UI carries some incidental ARIA
+  attributes but they are not tested against a standard.
+- **Multi-tab/window:** unsupported. There is no cross-tab locking,
+  `BroadcastChannel`, or `storage`-event listener — if the same directory is
+  open and mutating state in two tabs, whichever tab's `persistState()`
+  (triggered by `beforeunload` or a mutating action) writes to
+  `localStorage` last wins; the other tab's in-memory changes since the last
+  write are silently lost on its own next persist.
+- **Security — OAuth client ID exposure:** the client ID embedded in
+  `index.html` is intentionally public (Google's model for browser-only
+  OAuth apps); the only controls against misuse are Google's
+  Authorized-JavaScript-Origins restriction on that client ID and the
+  scopes granted per-user at consent time. There is no server-side rate
+  limiting layer — Gemini/Workspace API quota enforcement is entirely
+  Google's.
+- **Single-file architecture:** all markup, styles, and logic live in
+  `index.html`; changes should stay small and reviewable given the lack of
+  module boundaries. No JS framework, bundler, or build step is permitted —
+  all logic ships as plain `<script>` tags inside `index.html`, executed
+  directly by the browser with no compile/transpile stage.
+- **XSS safety:** dynamic/user-derived content must use delegated event
+  handlers, not inline `onclick="..."` strings, per the existing
+  `wireDelegatedClickHandlers` convention; agent/user-supplied names are
+  alphanumeric-sanitized (6.1) before being used as object keys or DOM ids
+  for this reason.
+- **Linting:** `npm run lint` (HTML structural lint via `@html-eslint`) must
+  pass in CI on every push/PR.
+- **Performance:** no numeric performance target is set — this is a
+  deliberate decision, not a gap. The scheduler runs at most one task at a
+  time by design (7.1), so throughput is bounded by Gemini response latency,
+  not the app. The only bound worth naming explicitly: worst-case time for a
+  single task to fail via retry exhaustion is on the order of
+  1s+2s+4s+8s+16s ≈ 31s of backoff sleep (5 retries, 1000ms base, doubling)
+  plus request time, before the task-failure path in 7.1 takes over — there
+  is no shorter timeout imposed on top of that.
+
+## 9. Acceptance criteria
+
+One or more pass/fail criteria per functional requirement in Section 7.
+Given/When/Then form is used where a specific trigger and outcome are
+testable.
+
+**Agent orchestration (7.1)**
+1. Given a directory with 39 agents, when a `[CREATE_AGENT]` tag or the
+   manual form registers a 40th, then it succeeds; a 41st attempt by either
+   path is rejected and a SYSTEM error log line containing "Agent cap (40)"
+   appears, with no new entry added to `agents`.
+2. Given an agent name containing only non-alphanumeric characters (e.g.
+   `"!!!"`), when creation is attempted via any path, then no agent is
+   created and (for the manual form) a toast reading "Agent name must
+   contain at least one letter or number." is shown.
+3. Given an agent id that already exists, when `[CREATE_AGENT]` targets that
+   same id, then the existing agent's fields are unchanged and a SYSTEM log
+   line reading "Agent '<id>' already registered. Skipping dynamic spawn."
+   appears.
+4. Given a `[TRIGGER_AGENT: name="Ghost", ...]` tag where `Ghost` does not
+   exist and the directory is under the agent cap, then a new agent with id
+   `Ghost` is created with the fallback clone persona, and a `once` task to
+   it is enqueued.
+5. Given a `[SCHEDULE_LOOP: name="Ghost", ...]` tag where `Ghost` does not
+   exist, then no agent is created, no task is enqueued, and a SYSTEM log
+   line reading "Loop target 'Ghost' missing. Loop scheduling skipped."
+   appears.
+6. Given a task whose `callGemini` call ultimately throws (e.g., 5
+   consecutive 500s), when the scheduler tick catches it, then the task is
+   still removed from the queue (`once`) or rescheduled (`loop`, if
+   iterations remain) exactly as on success, `completedTasksCount`
+   increments identically, and no entry is added to the target agent's
+   `memory`.
+
+**Safety caps (7.2)**
+7. Given a directory at 60 queued tasks, when any tag or UI action attempts
+   to enqueue a 61st, then it is rejected with a logged/toasted "queue is
+   full (60)" message and the queue length remains 60.
+8. Given `[SCHEDULE_LOOP: ..., interval_sec="1", limit="9999", ...]`, when
+   parsed, then the resulting entry has `intervalSec: 5` and
+   `maxIterations: 20`.
+9. Given more than 200 console blocks have been logged, then the oldest
+   entries are removed from the DOM such that exactly 200 remain.
+
+**Google Workspace integration (7.3)**
+10. Given a user unchecks the `cloud-platform` scope checkbox at Google
+    consent, when sign-in completes, then a toast, a SYSTEM console log
+    line, and a `console.warn` call all fire, each referencing the missing
+    scope.
+11. Given a valid session token, when any Workspace/Gemini API call returns
+    HTTP 401 or 403, then `googleAuth.accessToken` is cleared, the
+    `sessionStorage` token is removed, the sign-in UI reflects signed-out,
+    and the console shows an error instructing the user to sign in again —
+    within the same task's failure handling (no separate reauth flow is
+    triggered automatically).
+12. Given a Gemini call returns HTTP 429 with a `Retry-After: 2` header,
+    then the retry occurs after 2 seconds, not the default 1-second/doubling
+    schedule.
+13. Given sandbox mode (`gDriveMode !== 'real'`) is active, then the model's
+    system instruction never includes the Gmail/Calendar/Sheets tag
+    documentation block (`workspaceToolsHelp` is empty).
+
+**Human-in-the-loop email gate (7.4)**
+14. Given the autonomous-send toggle is off (default) and an agent emits
+    `[SEND_GMAIL: to="x@example.com", subject="s", body="b"]`, then a Gmail
+    **draft** is created via the API and no message is sent.
+15. Given the toggle is explicitly turned on, when the same tag is emitted,
+    then the email is sent (not drafted).
+16. Given any toggle state, when an agent emits `[DRAFT_GMAIL: ...]`, then a
+    draft is always created, never a sent message.
+
+**Persistence (7.5)**
+17. Given any directory state (agents, task queue, sandbox files), when the
+    page is reloaded, then `workspaces[currentWorkspace]` after reload is
+    deep-equal to its value immediately before reload, except that any task
+    with `status: "processing"` at save time is `"pending"` after reload.
+18. Given no `agentlooper_state_v1` key exists in `localStorage` on boot,
+    then a directory named `"Inhalants Directory"` is created and seeded
+    with the `band` preset's agents.
+
+**Presets (7.6)**
+19. Given a directory already has 1 or more agents, when a preset is loaded
+    into it, then no preset agents are added (the directory's agent set is
+    unchanged).
+20. Given a task in the directory has `status: "processing"`, when a preset
+    load is attempted, then it is rejected with the
+    "Clear active running tasks..." toast and no agents are added.
+
+**Directory lifecycle (7.7)**
+21. Given a directory named `"Foo"` already exists, when a user attempts to
+    create another directory also named exactly `"Foo"`, then creation is
+    rejected with the "A directory with that name already exists." toast.
+22. Given a task in the current directory has `status: "processing"`, when
+    the user selects a different directory from the dropdown, then the
+    switch is blocked, the dropdown reverts to the current directory, and
+    the "Cannot switch workspaces..." toast is shown.
+23. There is no UI control, tag, or function that renames or deletes an
+    existing directory (verifiable by absence in the codebase — see 7.7).
+
+**Non-functional requirements (8)**
+24. Given the app is opened via `file://` instead of `http(s)://`, then
+    Google sign-in fails to complete (Google Identity Services requires a
+    secure context) while sandbox mode (no sign-in, no `[SEND_GMAIL]`/
+    `[CREATE_EVENT]`/etc. tags advertised) remains fully usable.
+25. Given the latest stable release of Chrome, Edge, Firefox, or Safari on
+    desktop Windows/macOS/Linux, then the app loads and sandbox mode is
+    fully functional with no console errors on boot; no other browser is a
+    supported target.
+26. Given the same directory open in two browser tabs, when both tabs
+    mutate state and both eventually fire `persistState()` (e.g., via
+    `beforeunload`), then `localStorage["agentlooper_state_v1"]` reflects
+    only the last tab to write — the other tab's unsaved-at-that-point
+    changes are gone, with no error surfaced to either tab.
+27. Given the repository as checked out, then no `package.json` build/compile
+    script is required to run the app — `index.html` is directly loadable by
+    a browser (via `npm run dev`'s static file server or any other static
+    server) with zero transpilation step.
+28. There is no accessibility audit, WCAG-conformance check, or automated
+    a11y test in CI — verifiable by absence from `.github/workflows/ci.yml`
+    (only `npm run lint` runs there).
+
+**AI Architect ecosystem builder (7.8)**
+29. Given an empty goal string, when the "Autogenerate Ecosystem" action is
+    triggered, then no Gemini call is made and a toast reading "Please
+    describe what ecosystem you want to build." is shown.
+30. Given a valid goal and a directory with 38 existing agents, when Gemini
+    returns 4 agents in its structured response, then 2 are created (filling
+    the cap to 40) and 2 are skipped with a logged agent-cap error each —
+    the run as a whole still reports success (the toast and prompt-prefill
+    still occur) since the top-level call succeeded.
+31. Given Gemini returns text that fails `JSON.parse`, then zero agents are
+    added to the directory, a SYSTEM log line prefixed "Failed to generate
+    architecture:" appears, an error toast is shown, and the trigger button
+    is re-enabled with its original label.
+32. Given a successful run whose `initialTask.targetAgent` (after
+    sanitization) does not match any agent actually created this run or
+    already present, then the task-target dropdown falls back to the first
+    agent in the directory's `agents` object, and no task is auto-enqueued
+    in either case — the user must submit the pre-filled prompt manually.
+
+## 10. Out of scope / known limitations
+
+- No collaboration or sharing of a directory between multiple users/browsers.
+- No cross-device sync (state lives in one browser's `localStorage`).
+- No audit log/export of agent actions beyond the in-session console feed
+  (capped at 200 entries, DOM-only, not persisted) and whatever artifacts
+  land in Drive/Gmail/Calendar/Sheets themselves.
+- No distinct failed/error state for tasks (7.1) — a failed task is
+  indistinguishable from a successfully completed one in the data model and
+  in `completedTasksCount`; the only visible trace is the SYSTEM console log
+  line, which is capped and not persisted.
+- Single LLM provider (Gemini) and one hardcoded model
+  (`gemini-2.5-flash-preview-09-2025`), changed only by editing source.
+- No directory rename/delete (7.7).
+- No multi-tab support (8).
+
+## 11. Open questions
+
+- Should safety caps be user-configurable (e.g., power users wanting more
+  than 40 agents) or remain fixed constants?
+- Should the human-in-the-loop gate extend beyond Gmail to other
+  potentially-irreversible actions (e.g., Calendar event creation on a
+  shared calendar, Sheet overwrites)?
+- Is multi-provider LLM support (beyond Gemini) a future goal, or is the
+  Gemini dependency permanent by design?
+- Is there a desired path to background/durable execution (e.g., a
+  companion worker) or is "stops when the tab closes" acceptable long-term?
+- Should a failed task be surfaced/retried distinctly from a completed one
+  (see 7.1/10), or is silently treating it as completed acceptable given the
+  console log is the intended signal?
+- Should directory rename/delete be added, or is the current
+  create-and-accumulate-forever model acceptable given `localStorage`'s
+  practical size limits?
