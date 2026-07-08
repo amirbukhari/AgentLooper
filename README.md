@@ -106,8 +106,11 @@ authentication scopes` unless `generative-language.retriever` is also granted. I
 > The Gmail, Calendar, and Sheets tools only appear to agents once a real Google account
 > is connected — in sandbox mode agents only see the Drive tools.
 
-The Gemini model is set inline (currently `gemini-2.5-flash-preview-09-2025`); search
-for `generativelanguage.googleapis.com` in `index.html` to change it.
+The Gemini model is set inline (currently `gemini-2.5-flash`); search for
+`generativelanguage.googleapis.com` in `index.html` to change it. Prefer a stable
+(non-`-preview`, non-dated) model ID from
+[the current models list](https://ai.google.dev/gemini-api/docs/models) — dated preview
+builds get shut down on a schedule and will eventually 404.
 
 ## Project structure
 

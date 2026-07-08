@@ -2401,7 +2401,11 @@ If you choose to use tools, write your commands explicitly. Keep your responses 
         throw new Error("Sign in with Google (top right, or the Google Account panel) to use your own Gemini API quota.");
       }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent`;
+      // gemini-2.5-flash-preview-09-2025 (the previous hardcoded value) was a dated preview
+      // build that Google shut down; gemini-2.5-flash is the stable, non-expiring GA release
+      // in the same tier — use it (or another model from https://ai.google.dev/gemini-api/docs/models)
+      // instead of a dated preview build to avoid hitting this same 404 again on its own shutdown date.
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${googleAuth.accessToken}`

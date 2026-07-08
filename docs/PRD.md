@@ -881,8 +881,13 @@ maxIterations`) whose iteration throws, then `status` becomes `"failed"`
 - No automatic retry or expiry of a `status: "failed"` task — it sits in the
   queue (counting against `MAX_QUEUE`) until the user manually retries or
   dismisses it (7.1).
-- Single LLM provider (Gemini) and one hardcoded model
-  (`gemini-2.5-flash-preview-09-2025`), changed only by editing source.
+- Single LLM provider (Gemini) and one hardcoded model (`gemini-2.5-flash`),
+  changed only by editing source. A previous hardcoded value
+  (`gemini-2.5-flash-preview-09-2025`, a dated preview build) was shut down
+  by Google and started 404ing in production on 2026-07-09 — there is no
+  mechanism in the app to detect an impending or actual model shutdown
+  ahead of time; it will keep 404ing until someone notices and edits the
+  hardcoded model ID to a currently-supported one.
 - No multi-tab support (8).
 - No "restore over itself" import — a re-imported file always lands as a
   new, separate directory rather than overwriting the directory it was
