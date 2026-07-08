@@ -291,7 +291,10 @@ data model, and the agent's `memory` is not updated for a failed attempt
 - A live **Connectors panel** shows per-service (Gmail, Calendar, Sheets)
   connection status and a short recent-activity log
   (`logConnectorActivity`), populated from the same tag-execution paths in
-  7.1.
+  7.1. Each service also has a manual refresh button
+  (`refreshGmailConnector`/`refreshCalendarConnector`/`refreshSheetsConnector`)
+  that re-fetches its live data (draft count, upcoming events, spreadsheet
+  list) directly from the API on demand, independent of any tag execution.
 - Gmail, Calendar, and Sheets tags are only advertised to the model in its
   system instruction when `googleToolsReady()` is true (i.e., real Google
   auth is active); in sandbox mode the model is never told these tools
