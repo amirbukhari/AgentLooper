@@ -94,6 +94,14 @@
         <button onclick="createNewWorkspacePrompt()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Create New Directory / Workspace" aria-label="Create new workspace directory">
           <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
         </button>
+        <span class="w-px h-4 bg-slate-800"></span>
+        <button onclick="exportCurrentDirectory()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Export Current Directory (.json)" aria-label="Export current directory as a JSON file">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="triggerImportFilePicker()" class="min-w-[32px] min-h-[32px] p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors flex items-center justify-center" title="Import Directory (.json)" aria-label="Import a directory from a JSON file">
+          <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+        </button>
+        <input type="file" id="import-file-input" accept=".json,application/json" class="hidden" onchange="handleImportFile(this)">
       </div>
 
       <div class="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 px-3 py-1.5 rounded-xl">
@@ -927,6 +935,90 @@
         select.appendChild(opt);
       });
       select.value = currentWorkspace;
+    }
+
+    // --- Export / Import: portable JSON backup of a single directory (agents, task
+    // queue, sandbox files, graph layout). No server involved — pure client-side
+    // Blob download and File read, same trust model as everything else in this app.
+    function downloadJson(obj, filename) {
+      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function exportCurrentDirectory() {
+      saveCurrentWorkspaceState();
+      const payload = {
+        agentlooperExport: 1,
+        directoryName: currentWorkspace,
+        exportedAt: new Date().toISOString(),
+        directory: workspaces[currentWorkspace]
+      };
+      const safeName = currentWorkspace.replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'directory';
+      downloadJson(payload, `${safeName}.agentlooper.json`);
+      logConsoleEvent("SYSTEM", `📤 Exported directory [${currentWorkspace}] to a JSON file.`, "success");
+      showToast(`Exported "${currentWorkspace}"`, "download");
+    }
+
+    function triggerImportFilePicker() {
+      document.getElementById('import-file-input').click();
+    }
+
+    async function handleImportFile(inputEl) {
+      const file = inputEl.files[0];
+      inputEl.value = ''; // reset so re-selecting the same file still fires 'change'
+      if (!file) return;
+
+      let parsed;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch (err) {
+        showToast("Import failed: not valid JSON.", "alert-triangle", "error");
+        return;
+      }
+
+      const dir = parsed && parsed.directory;
+      if (!dir || typeof dir.agents !== 'object' || !Array.isArray(dir.taskQueue)) {
+        showToast("Import failed: not a recognized AgentLooper directory export.", "alert-triangle", "error");
+        return;
+      }
+
+      // Land under a unique directory name so an import never overwrites existing work.
+      const requestedName = (typeof parsed.directoryName === 'string' && parsed.directoryName.trim()) || 'Imported Directory';
+      let importName = requestedName;
+      let suffix = 2;
+      while (workspaces[importName]) {
+        importName = `${requestedName} (Imported ${suffix})`;
+        suffix++;
+      }
+
+      workspaces[importName] = {
+        agents: dir.agents || {},
+        // A task saved mid-execution in the exported file would be stuck 'processing'
+        // and never re-run, since the tick only picks up 'pending' tasks — same fixup
+        // applied to persisted state on every normal boot (see loadPersistedState).
+        taskQueue: (dir.taskQueue || []).map(t => t.status === 'processing' ? { ...t, status: 'pending' } : t),
+        positions: dir.positions || { 'User': { x: 50, y: 15 }, 'GDrive': { x: 85, y: 18 } },
+        completedTasksCount: typeof dir.completedTasksCount === 'number' ? dir.completedTasksCount : 0,
+        mockGDriveFiles: Array.isArray(dir.mockGDriveFiles) ? dir.mockGDriveFiles : []
+      };
+      rebuildWorkspaceDropdown();
+
+      if (isRunningTask()) {
+        showToast(`Imported "${importName}" — switch to it once the active task finishes.`, "alert-triangle", "error");
+      } else {
+        document.getElementById('workspace-directory-select').value = importName;
+        loadWorkspaceState(importName, null);
+        logConsoleEvent("SYSTEM", `📥 Imported directory [${importName}] from a JSON file.`, "success");
+        showToast(`Imported and switched to "${importName}"`, "check-circle");
+      }
+      persistState();
     }
 
     // Dynamic AI Architect Generator utilizing structured JSON responses from Gemini

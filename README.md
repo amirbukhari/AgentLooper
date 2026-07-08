@@ -47,6 +47,9 @@ the whole system before connecting any Google account.
 - **Sandbox vs. real Drive.** Start against mock files; flip to real Google Drive
   once signed in.
 - **Starter presets.** A band-manager (default) and code-generation agent team are built in.
+- **Export / Import.** Download any directory as a `.json` file from the header, and
+  re-import it later (or on another machine/browser) — always as a new directory, so it
+  never overwrites your current work.
 
 ## Quick start
 
@@ -112,14 +115,14 @@ for `generativelanguage.googleapis.com` in `index.html` to change it.
 
 ## Development
 
-| Command                | What it does                                          |
-| ---------------------- | ----------------------------------------------------- |
-| `npm run dev`          | Serve on `http://localhost:8080` and open a browser   |
-| `npm start`            | Serve without opening a browser                       |
-| `npm run lint`         | Lint `index.html` for structural HTML issues          |
-| `npm run lint:fix`     | Auto-fix lint issues where possible                   |
-| `npm run format`       | Format all files with Prettier                        |
-| `npm run format:check` | Report formatting issues without writing              |
+| Command                | What it does                                        |
+| ---------------------- | --------------------------------------------------- |
+| `npm run dev`          | Serve on `http://localhost:8080` and open a browser |
+| `npm start`            | Serve without opening a browser                     |
+| `npm run lint`         | Lint `index.html` for structural HTML issues        |
+| `npm run lint:fix`     | Auto-fix lint issues where possible                 |
+| `npm run format`       | Format all files with Prettier                      |
+| `npm run format:check` | Report formatting issues without writing            |
 
 > `index.html` predates the formatter and is intentionally left hand-formatted, so
 > `format:check` reports it. Running `npm run format` will bring it in line, but

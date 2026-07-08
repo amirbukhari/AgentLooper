@@ -66,6 +66,7 @@ reading the source or asking a clarifying question.
 
 A single technical user (e.g., a developer or hobbyist) experimenting with
 agentic/multi-agent LLM behavior who wants to:
+
 - Prototype agent-to-agent delegation patterns without standing up
   infrastructure.
 - Optionally connect real Google Workspace data/actions to observe agents
@@ -99,6 +100,9 @@ agentic/multi-agent LLM behavior who wants to:
 - **AI Architect ecosystem builder** — a one-shot Gemini call, distinct from
   a preset, that generates a 2–4-agent team from a free-text goal the user
   types in, and adds it into the current directory. Full spec: 7.8.
+- **Export / Import** — a directory can be downloaded as a portable JSON
+  file and later re-imported (always as a new, uniquely-named directory —
+  never overwriting existing work). Full spec: 7.9.
 
 ## 6. Data model
 
@@ -110,13 +114,13 @@ serialized verbatim (via `JSON.stringify`) into `localStorage` on
 
 Stored as `agents[id]` inside the active directory.
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `id` | string | yes | The object key. Derived from the user/agent-supplied name by stripping every character that is not `[A-Za-z0-9]` (`name.replace(/[^a-zA-Z0-9]/g, "")`). If this produces an empty string, creation is rejected — see 7.1. |
-| `persona` | string | yes | Free-text system-prompt-style description, injected verbatim into the Gemini system instruction for that agent. |
-| `theme` | string | yes | UI color tag only — one of `brand`, `amber`, `emerald`, `rose`, `cyan`. Manually created / preset agents get an explicit value (default `brand`); agents auto-spawned via `[CREATE_AGENT]` or trigger-fallback get one picked at random from `["emerald","rose","cyan","amber","brand"]`. |
-| `memory` | string[] | yes | A rolling log, newest-first (`unshift`). Two entries are added per completed task: `"[Received Task Prompt]: <first 80 chars of task>..."` then `"[AI Output]: <first 100 chars of Gemini's response>..."`. Capped at 50 entries (oldest popped once exceeded). Seeded with one string at creation (e.g. `"Manually registered and spawned by User workspace command."`). |
-| `createdTime` | Date | yes | Set once at creation; never updated. |
+| Field         | Type     | Required | Notes                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | string   | yes      | The object key. Derived from the user/agent-supplied name by stripping every character that is not `[A-Za-z0-9]` (`name.replace(/[^a-zA-Z0-9]/g, "")`). If this produces an empty string, creation is rejected — see 7.1.                                                                                                                                                 |
+| `persona`     | string   | yes      | Free-text system-prompt-style description, injected verbatim into the Gemini system instruction for that agent.                                                                                                                                                                                                                                                           |
+| `theme`       | string   | yes      | UI color tag only — one of `brand`, `amber`, `emerald`, `rose`, `cyan`. Manually created / preset agents get an explicit value (default `brand`); agents auto-spawned via `[CREATE_AGENT]` or trigger-fallback get one picked at random from `["emerald","rose","cyan","amber","brand"]`.                                                                                 |
+| `memory`      | string[] | yes      | A rolling log, newest-first (`unshift`). Two entries are added per completed task: `"[Received Task Prompt]: <first 80 chars of task>..."` then `"[AI Output]: <first 100 chars of Gemini's response>..."`. Capped at 50 entries (oldest popped once exceeded). Seeded with one string at creation (e.g. `"Manually registered and spawned by User workspace command."`). |
+| `createdTime` | Date     | yes      | Set once at creation; never updated.                                                                                                                                                                                                                                                                                                                                      |
 
 **Uniqueness:** `id` must be unique within a directory. The manual "create
 agent" form and the `[CREATE_AGENT]` tag both check `agents[id]` first and
@@ -133,42 +137,42 @@ Held in the active directory's `taskQueue` array; the scheduler tick scans
 it in array order and runs the first entry that is both `status: "pending"`
 and due (`scheduledTime <= Date.now()`).
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `id` | string | yes | `crypto.randomUUID()`. |
-| `fromAgent` | string | yes | Originating agent's `id`, or the literal string `"User"` for manually enqueued tasks, or `"GDrive"` for the follow-up task queued by a `[READ_GDRIVE]`/`[READ_SHEET]`. |
-| `toAgent` | string | yes | Target agent's `id`. |
-| `type` | `"once"` \| `"loop"` | yes | |
-| `promptText` | string | yes | The task text sent to the agent as the Gemini user turn. |
-| `scheduledTime` | number (epoch ms) | yes | |
-| `status` | `"pending"` \| `"processing"` | yes | There is no `"failed"`/`"error"`/`"done"` status — see 7.1 Task failure behavior. |
-| `intervalSec` | number | only if `type: "loop"` | Clamped to `[5, 3600]` via `clampLoopInterval` (5 = `MIN_LOOP_INTERVAL_SEC`, 3600 = `MAX_LOOP_INTERVAL_SEC`); unparsable input falls back to 10 before clamping. |
-| `currentIteration` | number | only if `type: "loop"` | Starts at 1. |
-| `maxIterations` | number | only if `type: "loop"` | Clamped to `[1, 20]` via `clampLoopIterations`; unparsable input falls back to 3 before clamping. |
-| `aborted` | boolean | optional | Set `true` and the entry is immediately spliced out of the queue when the user cancels it from the UI. |
+| Field              | Type                          | Required               | Notes                                                                                                                                                                  |
+| ------------------ | ----------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | string                        | yes                    | `crypto.randomUUID()`.                                                                                                                                                 |
+| `fromAgent`        | string                        | yes                    | Originating agent's `id`, or the literal string `"User"` for manually enqueued tasks, or `"GDrive"` for the follow-up task queued by a `[READ_GDRIVE]`/`[READ_SHEET]`. |
+| `toAgent`          | string                        | yes                    | Target agent's `id`.                                                                                                                                                   |
+| `type`             | `"once"` \| `"loop"`          | yes                    |                                                                                                                                                                        |
+| `promptText`       | string                        | yes                    | The task text sent to the agent as the Gemini user turn.                                                                                                               |
+| `scheduledTime`    | number (epoch ms)             | yes                    |                                                                                                                                                                        |
+| `status`           | `"pending"` \| `"processing"` | yes                    | There is no `"failed"`/`"error"`/`"done"` status — see 7.1 Task failure behavior.                                                                                      |
+| `intervalSec`      | number                        | only if `type: "loop"` | Clamped to `[5, 3600]` via `clampLoopInterval` (5 = `MIN_LOOP_INTERVAL_SEC`, 3600 = `MAX_LOOP_INTERVAL_SEC`); unparsable input falls back to 10 before clamping.       |
+| `currentIteration` | number                        | only if `type: "loop"` | Starts at 1.                                                                                                                                                           |
+| `maxIterations`    | number                        | only if `type: "loop"` | Clamped to `[1, 20]` via `clampLoopIterations`; unparsable input falls back to 3 before clamping.                                                                      |
+| `aborted`          | boolean                       | optional               | Set `true` and the entry is immediately spliced out of the queue when the user cancels it from the UI.                                                                 |
 
 ### 6.3 Directory (workspace)
 
 Held in a top-level `workspaces` object keyed by the directory's **raw,
-user-entered name**, trimmed but *not* alphanumeric-sanitized (unlike agent
+user-entered name**, trimmed but _not_ alphanumeric-sanitized (unlike agent
 ids — directory names may contain spaces/punctuation and are case-sensitive
 exact-match keys).
 
-| Field | Type | Notes |
-|---|---|---|
-| `agents` | `{ [agentId]: Agent }` | |
-| `taskQueue` | `TaskQueueEntry[]` | |
-| `positions` | `{ [nodeId]: { x: number, y: number } }` | UI graph-layout coordinates; always seeded with `User` (`{x:50,y:15}`) and `GDrive` (`{x:85,y:18}`) pseudo-nodes. |
-| `completedTasksCount` | number | Incremented once per task removed from the queue — **including tasks whose Gemini call errored**; see 7.1. |
-| `mockGDriveFiles` | `{ name: string, size: string, content: string, updated: string }[]` | Sandbox-mode virtual file store. `size` is a display string (e.g. `"42 B"`), not a number. Ignored in real-Drive mode. |
+| Field                 | Type                                                                 | Notes                                                                                                                  |
+| --------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `agents`              | `{ [agentId]: Agent }`                                               |                                                                                                                        |
+| `taskQueue`           | `TaskQueueEntry[]`                                                   |                                                                                                                        |
+| `positions`           | `{ [nodeId]: { x: number, y: number } }`                             | UI graph-layout coordinates; always seeded with `User` (`{x:50,y:15}`) and `GDrive` (`{x:85,y:18}`) pseudo-nodes.      |
+| `completedTasksCount` | number                                                               | Incremented once per task removed from the queue — **including tasks whose Gemini call errored**; see 7.1.             |
+| `mockGDriveFiles`     | `{ name: string, size: string, content: string, updated: string }[]` | Sandbox-mode virtual file store. `size` is a display string (e.g. `"42 B"`), not a number. Ignored in real-Drive mode. |
 
 ### 6.4 Persistence keys
 
-| Key | Store | Shape | Notes |
-|---|---|---|---|
-| `agentlooper_state_v1` | `localStorage` | `{ workspaces: { [directoryName]: Directory }, currentWorkspace: string }` | Written on `beforeunload` and after most state-mutating actions. No schema-version field — a future field rename/removal is not migration-safe against old saved state. |
-| `agentlooper_autosend` | `localStorage` | `"1"` \| `"0"` | The human-in-the-loop email gate (7.4), stored independently of any directory. |
-| `agentos_google_token` | `sessionStorage` | `{ access_token: string, expires_at: number (epoch ms) }` | The live Google OAuth access token. Deliberately **not** written to `localStorage` — cleared when the tab session ends, and never included in the directory blob. |
+| Key                    | Store            | Shape                                                                      | Notes                                                                                                                                                                   |
+| ---------------------- | ---------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentlooper_state_v1` | `localStorage`   | `{ workspaces: { [directoryName]: Directory }, currentWorkspace: string }` | Written on `beforeunload` and after most state-mutating actions. No schema-version field — a future field rename/removal is not migration-safe against old saved state. |
+| `agentlooper_autosend` | `localStorage`   | `"1"` \| `"0"`                                                             | The human-in-the-loop email gate (7.4), stored independently of any directory.                                                                                          |
+| `agentos_google_token` | `sessionStorage` | `{ access_token: string, expires_at: number (epoch ms) }`                  | The live Google OAuth access token. Deliberately **not** written to `localStorage` — cleared when the tab session ends, and never included in the directory blob.       |
 
 On boot, any task queue entry restored with `status: "processing"` is reset
 to `"pending"` (recovers a task that was mid-execution when the tab closed).
@@ -211,19 +215,19 @@ to `"pending"` (recovers a task that was mid-execution when the tab closed).
 
 **Per-tag grammar and behavior:**
 
-| Tag | Required attributes | Behavior on success | Behavior on failure/edge case |
-|---|---|---|---|
-| `[CREATE_AGENT: name="...", persona="..."]` | `name`, `persona` (both required by regex; tag doesn't match without both) | Registers a new agent (6.1) with a random theme. | Empty name after sanitization → silently skipped (no log). Name already registered → skipped, logs `"Agent '<name>' already registered. Skipping dynamic spawn."`. Directory at `MAX_AGENTS` (40) → skipped, logs the agent-cap error. |
-| `[TRIGGER_AGENT: name="...", task="..."]` | `name`, `task` | Enqueues a `once` task to the target agent, `scheduledTime = now`. | Empty target name → silently skipped. Target agent doesn't exist **and** directory is at `MAX_AGENTS` → skipped, logs the agent-cap error. Target agent doesn't exist and directory has capacity → **auto-spawns a generic fallback clone agent** (persona: `"You are a helper clone agent named <name>. Deliver logical structured feedback."`), logs `"Cannot trigger '<name>': Agent does not exist. Spawning standard clone..."`, then proceeds to enqueue the task on it. Queue at `MAX_QUEUE` (60) → skipped, logs the queue-full error. |
-| `[SCHEDULE_LOOP: name="...", interval_sec="N", limit="N", task="..."]` | `name`, `interval_sec`, `limit`, `task` | Enqueues a `loop` task, first run at `now + interval_sec*1000`. | Empty target name → silently skipped. Target agent doesn't exist → skipped **without auto-spawning** (unlike `TRIGGER_AGENT`), logs `"Loop target '<name>' missing. Loop scheduling skipped."`. Queue at `MAX_QUEUE` → skipped, logs the queue-full error. `interval_sec`/`limit` are clamped per 6.2, not rejected. |
-| `[WRITE_GDRIVE: filename="...", content="..."]` | `filename`, `content` | Sandbox: upserts into `mockGDriveFiles` by exact name match. Real Drive: searches the app's Drive workspace folder for a file with that exact name and PATCHes it, or creates it via multipart upload if absent. | Real-Drive mode without an authenticated session/workspace folder → logs an "unauthenticated" error, no queue/state change. Real-Drive API failure → caught, logs a generic connection-failure error. |
-| `[READ_GDRIVE: filename="..."]` | `filename` | Looks up the file by exact name; on found, enqueues a `once` follow-up task back to the requesting agent (`fromAgent: "GDrive"`, `scheduledTime: now + 1000`) whose prompt embeds the file's full content. | File not found (sandbox or real) → logs a "not found" error, no follow-up task. Unauthenticated in real-Drive mode → logs an "unauthenticated" error. |
-| `[SEND_GMAIL: to="...", subject="...", body="..."]` | `to`, `subject` (may be empty string), `body` | If the master autonomous-send gate (7.4) is on, sends the email via Gmail API; if off, saves it as a Gmail draft instead. | Google tools not connected (`googleToolsReady()` false) → skipped, logs a "sign in" error, no draft/send attempted. API call throws → caught, logs a Gmail error. |
-| `[DRAFT_GMAIL: to="...", subject="...", body="..."]` | same as above | Always saves a Gmail draft, regardless of the autonomous-send gate. | Same failure modes as `SEND_GMAIL`. |
-| `[CREATE_EVENT: title="...", start="...", end="...", details="..."]` | `title`, `start` required; `end` and `details` optional (regex allows them to be omitted entirely) | Creates a primary-calendar event via the Calendar API. | Not connected → skipped, logs a "sign in" error. API call throws (e.g., invalid ISO datetime) → caught, logs an error naming the likely cause. |
-| `[LIST_EVENTS]` or `[LIST_EVENTS: max="N"]` | none (`max` optional, default 5) | `max` is clamped to `[1, 25]`; fetches upcoming events and enqueues the results back to the agent as context (implementation detail of `calendarListTool`). | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error. |
-| `[WRITE_SHEET: name="...", values="a,b ; c,d"]` | `name`, `values` | Creates/overwrites a spreadsheet by name; rows split on `;`, cells split on `,`. | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error. |
-| `[READ_SHEET: name="..."]` | `name` | Reads a spreadsheet's contents back to the agent (implementation detail of `sheetReadTool`). | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error. |
+| Tag                                                                    | Required attributes                                                                                | Behavior on success                                                                                                                                                                                              | Behavior on failure/edge case                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[CREATE_AGENT: name="...", persona="..."]`                            | `name`, `persona` (both required by regex; tag doesn't match without both)                         | Registers a new agent (6.1) with a random theme.                                                                                                                                                                 | Empty name after sanitization → silently skipped (no log). Name already registered → skipped, logs `"Agent '<name>' already registered. Skipping dynamic spawn."`. Directory at `MAX_AGENTS` (40) → skipped, logs the agent-cap error.                                                                                                                                                                                                                                                                                                         |
+| `[TRIGGER_AGENT: name="...", task="..."]`                              | `name`, `task`                                                                                     | Enqueues a `once` task to the target agent, `scheduledTime = now`.                                                                                                                                               | Empty target name → silently skipped. Target agent doesn't exist **and** directory is at `MAX_AGENTS` → skipped, logs the agent-cap error. Target agent doesn't exist and directory has capacity → **auto-spawns a generic fallback clone agent** (persona: `"You are a helper clone agent named <name>. Deliver logical structured feedback."`), logs `"Cannot trigger '<name>': Agent does not exist. Spawning standard clone..."`, then proceeds to enqueue the task on it. Queue at `MAX_QUEUE` (60) → skipped, logs the queue-full error. |
+| `[SCHEDULE_LOOP: name="...", interval_sec="N", limit="N", task="..."]` | `name`, `interval_sec`, `limit`, `task`                                                            | Enqueues a `loop` task, first run at `now + interval_sec*1000`.                                                                                                                                                  | Empty target name → silently skipped. Target agent doesn't exist → skipped **without auto-spawning** (unlike `TRIGGER_AGENT`), logs `"Loop target '<name>' missing. Loop scheduling skipped."`. Queue at `MAX_QUEUE` → skipped, logs the queue-full error. `interval_sec`/`limit` are clamped per 6.2, not rejected.                                                                                                                                                                                                                           |
+| `[WRITE_GDRIVE: filename="...", content="..."]`                        | `filename`, `content`                                                                              | Sandbox: upserts into `mockGDriveFiles` by exact name match. Real Drive: searches the app's Drive workspace folder for a file with that exact name and PATCHes it, or creates it via multipart upload if absent. | Real-Drive mode without an authenticated session/workspace folder → logs an "unauthenticated" error, no queue/state change. Real-Drive API failure → caught, logs a generic connection-failure error.                                                                                                                                                                                                                                                                                                                                          |
+| `[READ_GDRIVE: filename="..."]`                                        | `filename`                                                                                         | Looks up the file by exact name; on found, enqueues a `once` follow-up task back to the requesting agent (`fromAgent: "GDrive"`, `scheduledTime: now + 1000`) whose prompt embeds the file's full content.       | File not found (sandbox or real) → logs a "not found" error, no follow-up task. Unauthenticated in real-Drive mode → logs an "unauthenticated" error.                                                                                                                                                                                                                                                                                                                                                                                          |
+| `[SEND_GMAIL: to="...", subject="...", body="..."]`                    | `to`, `subject` (may be empty string), `body`                                                      | If the master autonomous-send gate (7.4) is on, sends the email via Gmail API; if off, saves it as a Gmail draft instead.                                                                                        | Google tools not connected (`googleToolsReady()` false) → skipped, logs a "sign in" error, no draft/send attempted. API call throws → caught, logs a Gmail error.                                                                                                                                                                                                                                                                                                                                                                              |
+| `[DRAFT_GMAIL: to="...", subject="...", body="..."]`                   | same as above                                                                                      | Always saves a Gmail draft, regardless of the autonomous-send gate.                                                                                                                                              | Same failure modes as `SEND_GMAIL`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `[CREATE_EVENT: title="...", start="...", end="...", details="..."]`   | `title`, `start` required; `end` and `details` optional (regex allows them to be omitted entirely) | Creates a primary-calendar event via the Calendar API.                                                                                                                                                           | Not connected → skipped, logs a "sign in" error. API call throws (e.g., invalid ISO datetime) → caught, logs an error naming the likely cause.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `[LIST_EVENTS]` or `[LIST_EVENTS: max="N"]`                            | none (`max` optional, default 5)                                                                   | `max` is clamped to `[1, 25]`; fetches upcoming events and enqueues the results back to the agent as context (implementation detail of `calendarListTool`).                                                      | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `[WRITE_SHEET: name="...", values="a,b ; c,d"]`                        | `name`, `values`                                                                                   | Creates/overwrites a spreadsheet by name; rows split on `;`, cells split on `,`.                                                                                                                                 | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `[READ_SHEET: name="..."]`                                             | `name`                                                                                             | Reads a spreadsheet's contents back to the agent (implementation detail of `sheetReadTool`).                                                                                                                     | Not connected → skipped, logs a "sign in" error. API failure → caught, logs an error.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 **Task failure behavior:** if `executeTaskNode` throws for any reason
 (target agent no longer exists, or `callGemini` exhausts its retries — see
@@ -367,7 +371,7 @@ this data:
   Creation is rejected with a toast if a directory with that **exact**
   string already exists (`workspaces[name]` truthy check, case-sensitive).
   A newly created directory starts with zero agents, an empty task queue,
-  and no sandbox files (the default preset is *not* auto-seeded into an
+  and no sandbox files (the default preset is _not_ auto-seeded into an
   explicitly-created directory — only the initial boot workspace is).
 - **Switch:** selecting a different directory from the dropdown saves the
   current directory's live state, then loads the target directory's saved
@@ -425,6 +429,62 @@ goal, additively into the current directory.
   from a failed run are added (the `forEach` that creates agents only runs
   after a successful parse). The trigger button is re-enabled and its label
   restored in a `finally` block regardless of outcome.
+
+### 7.9 Directory export / import
+
+Client-side-only JSON backup/restore of a single directory, via the
+Export/Import buttons in the Directory switcher pill (header).
+
+- **Export** (`exportCurrentDirectory`): commits any pending in-memory
+  changes (`saveCurrentWorkspaceState()`), then downloads a JSON file named
+  `<sanitized-directory-name>.agentlooper.json` (via a `Blob` +
+  `URL.createObjectURL` + a synthetic `<a download>` click — no server
+  round-trip) shaped as:
+  ```json
+  {
+    "agentlooperExport": 1,
+    "directoryName": "<current directory name>",
+    "exportedAt": "<ISO-8601 timestamp>",
+    "directory": { "agents": {...}, "taskQueue": [...], "positions": {...}, "completedTasksCount": 0, "mockGDriveFiles": [...] }
+  }
+  ```
+  `directory` is exactly the 6.3 Directory shape.
+- **Import** (`handleImportFile`, wired to a hidden `<input type="file"
+accept=".json">`): reads the selected file as text and `JSON.parse`s it.
+  - Invalid JSON syntax → toast "Import failed: not valid JSON.", no state
+    change.
+  - Valid JSON but missing a `directory` object, or `directory.agents` isn't
+    an object, or `directory.taskQueue` isn't an array → toast "Import
+    failed: not a recognized AgentLooper directory export.", no state
+    change.
+  - Otherwise, the import **always lands as a new directory** — it never
+    overwrites the current or any existing directory. The new directory's
+    name comes from `directoryName` in the file (falling back to
+    `"Imported Directory"` if absent/blank); if that name already exists in
+    `workspaces`, a numeric suffix is appended and incremented —
+    `"<name> (Imported 2)"`, `"(Imported 3)"`, etc. — until a unique name is
+    found.
+  - Any task queue entry restored with `status: "processing"` is reset to
+    `"pending"` on import (same fixup as normal boot restore, 6.4) so it
+    isn't stuck forever.
+  - Missing optional fields (`positions`, `completedTasksCount`,
+    `mockGDriveFiles`) are defaulted the same way a brand-new directory
+    would be (6.3's defaults / `0` / `[]`), so a hand-edited or partial file
+    still imports.
+  - If no task in the _current_ directory is `status: "processing"`, the app
+    switches to the newly imported directory immediately (same guard as
+    7.7's directory switch) and shows a "Imported and switched to
+    `<name>`" toast. If a task **is** processing, the import still succeeds
+    (the new directory is created and persisted) but the app stays on the
+    current directory, with a toast explaining the user must switch
+    manually once the active task finishes.
+  - `persistState()` runs at the end of either path, so the imported
+    directory survives a reload immediately.
+- Export/Import operate on exactly one directory at a time — there is no
+  whole-app (all-directories) backup/restore in this iteration (see Open
+  questions, 11).
+
+## 8. Non-functional requirements
 
 - **No backend / no server-side secrets.** The entire app is static
   (`index.html` + assets); the OAuth client ID is public by design, no
@@ -486,6 +546,7 @@ Given/When/Then form is used where a specific trigger and outcome are
 testable.
 
 **Agent orchestration (7.1)**
+
 1. Given a directory with 39 agents, when a `[CREATE_AGENT]` tag or the
    manual form registers a 40th, then it succeeds; a 41st attempt by either
    path is rejected and a SYSTEM error log line containing "Agent cap (40)"
@@ -513,123 +574,116 @@ testable.
    increments identically, and no entry is added to the target agent's
    `memory`.
 
-**Safety caps (7.2)**
-7. Given a directory at 60 queued tasks, when any tag or UI action attempts
-   to enqueue a 61st, then it is rejected with a logged/toasted "queue is
-   full (60)" message and the queue length remains 60.
-8. Given `[SCHEDULE_LOOP: ..., interval_sec="1", limit="9999", ...]`, when
-   parsed, then the resulting entry has `intervalSec: 5` and
-   `maxIterations: 20`.
-9. Given more than 200 console blocks have been logged, then the oldest
-   entries are removed from the DOM such that exactly 200 remain.
+**Safety caps (7.2)** 7. Given a directory at 60 queued tasks, when any tag or UI action attempts
+to enqueue a 61st, then it is rejected with a logged/toasted "queue is
+full (60)" message and the queue length remains 60. 8. Given `[SCHEDULE_LOOP: ..., interval_sec="1", limit="9999", ...]`, when
+parsed, then the resulting entry has `intervalSec: 5` and
+`maxIterations: 20`. 9. Given more than 200 console blocks have been logged, then the oldest
+entries are removed from the DOM such that exactly 200 remain.
 
-**Google Workspace integration (7.3)**
-10. Given a user unchecks the `cloud-platform` scope checkbox at Google
-    consent, when sign-in completes, then a toast, a SYSTEM console log
-    line, and a `console.warn` call all fire, each referencing the missing
-    scope.
-11. Given a valid session token, when any Workspace/Gemini API call returns
-    HTTP 401 or 403, then `googleAuth.accessToken` is cleared, the
-    `sessionStorage` token is removed, the sign-in UI reflects signed-out,
-    and the console shows an error instructing the user to sign in again —
-    within the same task's failure handling (no separate reauth flow is
-    triggered automatically).
-12. Given a Gemini call returns HTTP 429 with a `Retry-After: 2` header,
-    then the retry occurs after 2 seconds, not the default 1-second/doubling
-    schedule.
-13. Given sandbox mode (`gDriveMode !== 'real'`) is active, then the model's
-    system instruction never includes the Gmail/Calendar/Sheets tag
-    documentation block (`workspaceToolsHelp` is empty).
+**Google Workspace integration (7.3)** 10. Given a user unchecks the `cloud-platform` scope checkbox at Google
+consent, when sign-in completes, then a toast, a SYSTEM console log
+line, and a `console.warn` call all fire, each referencing the missing
+scope. 11. Given a valid session token, when any Workspace/Gemini API call returns
+HTTP 401 or 403, then `googleAuth.accessToken` is cleared, the
+`sessionStorage` token is removed, the sign-in UI reflects signed-out,
+and the console shows an error instructing the user to sign in again —
+within the same task's failure handling (no separate reauth flow is
+triggered automatically). 12. Given a Gemini call returns HTTP 429 with a `Retry-After: 2` header,
+then the retry occurs after 2 seconds, not the default 1-second/doubling
+schedule. 13. Given sandbox mode (`gDriveMode !== 'real'`) is active, then the model's
+system instruction never includes the Gmail/Calendar/Sheets tag
+documentation block (`workspaceToolsHelp` is empty).
 
-**Human-in-the-loop email gate (7.4)**
-14. Given the autonomous-send toggle is off (default) and an agent emits
-    `[SEND_GMAIL: to="x@example.com", subject="s", body="b"]`, then a Gmail
-    **draft** is created via the API and no message is sent.
-15. Given the toggle is explicitly turned on, when the same tag is emitted,
-    then the email is sent (not drafted).
-16. Given any toggle state, when an agent emits `[DRAFT_GMAIL: ...]`, then a
-    draft is always created, never a sent message.
+**Human-in-the-loop email gate (7.4)** 14. Given the autonomous-send toggle is off (default) and an agent emits
+`[SEND_GMAIL: to="x@example.com", subject="s", body="b"]`, then a Gmail
+**draft** is created via the API and no message is sent. 15. Given the toggle is explicitly turned on, when the same tag is emitted,
+then the email is sent (not drafted). 16. Given any toggle state, when an agent emits `[DRAFT_GMAIL: ...]`, then a
+draft is always created, never a sent message.
 
-**Persistence (7.5)**
-17. Given any directory state (agents, task queue, sandbox files), when the
-    page is reloaded, then `workspaces[currentWorkspace]` after reload is
-    deep-equal to its value immediately before reload, except that any task
-    with `status: "processing"` at save time is `"pending"` after reload.
-18. Given no `agentlooper_state_v1` key exists in `localStorage` on boot,
-    then a directory named `"Inhalants Directory"` is created and seeded
-    with the `band` preset's agents.
+**Persistence (7.5)** 17. Given any directory state (agents, task queue, sandbox files), when the
+page is reloaded, then `workspaces[currentWorkspace]` after reload is
+deep-equal to its value immediately before reload, except that any task
+with `status: "processing"` at save time is `"pending"` after reload. 18. Given no `agentlooper_state_v1` key exists in `localStorage` on boot,
+then a directory named `"Inhalants Directory"` is created and seeded
+with the `band` preset's agents.
 
-**Presets (7.6)**
-19. Given the app boots with no persisted state and no other seeding has
-    happened yet, then the default directory is auto-seeded with the `band`
-    preset's 3 agents (Manager, Booking, Merch).
-20. Given a directory already has 1 or more agents, when that directory is
-    (re-)loaded via `loadWorkspaceState` (boot restore or directory switch),
-    then no preset agents are auto-seeded into it (the directory's agent set
-    is unchanged by this path).
-21. Given a directory with any existing agents and/or queued tasks (none
-    `processing`), when the user clicks "Band Manager" or "Code Generation"
-    in the Starter Presets panel, then the directory's `agents` and
-    `taskQueue` are fully replaced with the chosen preset's 3 agents and an
-    empty queue, the console feed is cleared, the task-prompt field and
-    task-target-agent select reflect the preset's `initialTask`, and a
-    "Loaded preset environment: `<band|code>`" toast appears.
-22. Given a task in the directory has `status: "processing"`, when a Starter
-    Presets button is clicked, then the load is rejected with the
-    "Clear active running tasks..." toast and neither `agents` nor
-    `taskQueue` are modified.
+**Presets (7.6)** 19. Given the app boots with no persisted state and no other seeding has
+happened yet, then the default directory is auto-seeded with the `band`
+preset's 3 agents (Manager, Booking, Merch). 20. Given a directory already has 1 or more agents, when that directory is
+(re-)loaded via `loadWorkspaceState` (boot restore or directory switch),
+then no preset agents are auto-seeded into it (the directory's agent set
+is unchanged by this path). 21. Given a directory with any existing agents and/or queued tasks (none
+`processing`), when the user clicks "Band Manager" or "Code Generation"
+in the Starter Presets panel, then the directory's `agents` and
+`taskQueue` are fully replaced with the chosen preset's 3 agents and an
+empty queue, the console feed is cleared, the task-prompt field and
+task-target-agent select reflect the preset's `initialTask`, and a
+"Loaded preset environment: `<band|code>`" toast appears. 22. Given a task in the directory has `status: "processing"`, when a Starter
+Presets button is clicked, then the load is rejected with the
+"Clear active running tasks..." toast and neither `agents` nor
+`taskQueue` are modified.
 
-**Directory lifecycle (7.7)**
-23. Given a directory named `"Foo"` already exists, when a user attempts to
-    create another directory also named exactly `"Foo"`, then creation is
-    rejected with the "A directory with that name already exists." toast.
-24. Given a task in the current directory has `status: "processing"`, when
-    the user selects a different directory from the dropdown, then the
-    switch is blocked, the dropdown reverts to the current directory, and
-    the "Cannot switch workspaces..." toast is shown.
-25. There is no UI control, tag, or function that renames or deletes an
-    existing directory (verifiable by absence in the codebase — see 7.7).
+**Directory lifecycle (7.7)** 23. Given a directory named `"Foo"` already exists, when a user attempts to
+create another directory also named exactly `"Foo"`, then creation is
+rejected with the "A directory with that name already exists." toast. 24. Given a task in the current directory has `status: "processing"`, when
+the user selects a different directory from the dropdown, then the
+switch is blocked, the dropdown reverts to the current directory, and
+the "Cannot switch workspaces..." toast is shown. 25. There is no UI control, tag, or function that renames or deletes an
+existing directory (verifiable by absence in the codebase — see 7.7).
 
-**Non-functional requirements (8)**
-26. Given the app is opened via `file://` instead of `http(s)://`, then
-    Google sign-in fails to complete (Google Identity Services requires a
-    secure context) while sandbox mode (no sign-in, no `[SEND_GMAIL]`/
-    `[CREATE_EVENT]`/etc. tags advertised) remains fully usable.
-27. Given the latest stable release of Chrome, Edge, Firefox, or Safari on
-    desktop Windows/macOS/Linux, then the app loads and sandbox mode is
-    fully functional with no console errors on boot; no other browser is a
-    supported target.
-28. Given the same directory open in two browser tabs, when both tabs
-    mutate state and both eventually fire `persistState()` (e.g., via
-    `beforeunload`), then `localStorage["agentlooper_state_v1"]` reflects
-    only the last tab to write — the other tab's unsaved-at-that-point
-    changes are gone, with no error surfaced to either tab.
-29. Given the repository as checked out, then no `package.json` build/compile
-    script is required to run the app — `index.html` is directly loadable by
-    a browser (via `npm run dev`'s static file server or any other static
-    server) with zero transpilation step.
-30. There is no accessibility audit, WCAG-conformance check, or automated
-    a11y test in CI — verifiable by absence from `.github/workflows/ci.yml`
-    (only `npm run lint` runs there).
+**Non-functional requirements (8)** 26. Given the app is opened via `file://` instead of `http(s)://`, then
+Google sign-in fails to complete (Google Identity Services requires a
+secure context) while sandbox mode (no sign-in, no `[SEND_GMAIL]`/
+`[CREATE_EVENT]`/etc. tags advertised) remains fully usable. 27. Given the latest stable release of Chrome, Edge, Firefox, or Safari on
+desktop Windows/macOS/Linux, then the app loads and sandbox mode is
+fully functional with no console errors on boot; no other browser is a
+supported target. 28. Given the same directory open in two browser tabs, when both tabs
+mutate state and both eventually fire `persistState()` (e.g., via
+`beforeunload`), then `localStorage["agentlooper_state_v1"]` reflects
+only the last tab to write — the other tab's unsaved-at-that-point
+changes are gone, with no error surfaced to either tab. 29. Given the repository as checked out, then no `package.json` build/compile
+script is required to run the app — `index.html` is directly loadable by
+a browser (via `npm run dev`'s static file server or any other static
+server) with zero transpilation step. 30. There is no accessibility audit, WCAG-conformance check, or automated
+a11y test in CI — verifiable by absence from `.github/workflows/ci.yml`
+(only `npm run lint` runs there).
 
-**AI Architect ecosystem builder (7.8)**
-31. Given an empty goal string, when the "Autogenerate Ecosystem" action is
-    triggered, then no Gemini call is made and a toast reading "Please
-    describe what ecosystem you want to build." is shown.
-32. Given a valid goal and a directory with 38 existing agents, when Gemini
-    returns 4 agents in its structured response, then 2 are created (filling
-    the cap to 40) and 2 are skipped with a logged agent-cap error each —
-    the run as a whole still reports success (the toast and prompt-prefill
-    still occur) since the top-level call succeeded.
-33. Given Gemini returns text that fails `JSON.parse`, then zero agents are
-    added to the directory, a SYSTEM log line prefixed "Failed to generate
-    architecture:" appears, an error toast is shown, and the trigger button
-    is re-enabled with its original label.
-34. Given a successful run whose `initialTask.targetAgent` (after
-    sanitization) does not match any agent actually created this run or
-    already present, then the task-target dropdown falls back to the first
-    agent in the directory's `agents` object, and no task is auto-enqueued
-    in either case — the user must submit the pre-filled prompt manually.
+**AI Architect ecosystem builder (7.8)** 31. Given an empty goal string, when the "Autogenerate Ecosystem" action is
+triggered, then no Gemini call is made and a toast reading "Please
+describe what ecosystem you want to build." is shown. 32. Given a valid goal and a directory with 38 existing agents, when Gemini
+returns 4 agents in its structured response, then 2 are created (filling
+the cap to 40) and 2 are skipped with a logged agent-cap error each —
+the run as a whole still reports success (the toast and prompt-prefill
+still occur) since the top-level call succeeded. 33. Given Gemini returns text that fails `JSON.parse`, then zero agents are
+added to the directory, a SYSTEM log line prefixed "Failed to generate
+architecture:" appears, an error toast is shown, and the trigger button
+is re-enabled with its original label. 34. Given a successful run whose `initialTask.targetAgent` (after
+sanitization) does not match any agent actually created this run or
+already present, then the task-target dropdown falls back to the first
+agent in the directory's `agents` object, and no task is auto-enqueued
+in either case — the user must submit the pre-filled prompt manually.
+
+**Directory export/import (7.9)** 35. Given any directory, when Export is clicked, then a file named
+`<sanitized-name>.agentlooper.json` downloads containing
+`agentlooperExport: 1`, the directory name, an ISO timestamp, and a
+`directory` object deep-equal to `workspaces[currentWorkspace]` at
+export time. 36. Given a file that isn't valid JSON, when it's selected for Import, then
+a "not valid JSON" error toast appears and no directory is added to
+`workspaces`. 37. Given valid JSON lacking a `directory.agents` object or
+`directory.taskQueue` array, when selected for Import, then a "not a
+recognized AgentLooper directory export" error toast appears and no
+directory is added. 38. Given a valid export file whose `directoryName` matches an existing
+directory, when imported, then a new directory named
+`"<name> (Imported 2)"` is created (incrementing further on repeated
+collisions) rather than overwriting the existing one. 39. Given a valid export file containing a task with `status: "processing"`,
+when imported, then that task's status is `"pending"` in the new
+directory immediately after import. 40. Given no task in the current directory is `status: "processing"`, when a
+valid file is imported, then the app switches to the newly created
+directory and shows an "Imported and switched to..." toast; given a task
+**is** `status: "processing"`, the import still creates the directory
+but the app stays on the current one, with a toast saying to switch
+manually once the active task finishes.
 
 ## 10. Out of scope / known limitations
 
@@ -664,3 +718,9 @@ testable.
 - Should directory rename/delete be added, or is the current
   create-and-accumulate-forever model acceptable given `localStorage`'s
   practical size limits?
+- Should Export/Import (7.9) grow a whole-app (all-directories) backup/
+  restore mode, or does per-directory cover the real use case (sharing/
+  backing up one ecosystem)?
+- Should re-importing an exported file offer to **overwrite** the directory
+  it came from (matched by name) as an alternative to always creating a new
+  one, for a "restore this backup over itself" workflow?
