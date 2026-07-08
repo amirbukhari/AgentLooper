@@ -162,6 +162,27 @@
           </div>
         </div>
 
+        <!-- Starter Presets -->
+        <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4">
+          <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="blocks" class="text-cyan-400 w-5 h-5"></i>
+              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wide">Starter Presets</h2>
+            </div>
+          </div>
+          <div class="flex flex-col gap-3">
+            <p class="text-[11px] text-slate-400 italic leading-relaxed">Replace this directory's current agents and queue with a ready-made example ecosystem.</p>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="loadDemoPreset('band')" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5">
+                <i data-lucide="mic-2" class="w-3.5 h-3.5"></i> Band Manager
+              </button>
+              <button onclick="loadDemoPreset('code')" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5">
+                <i data-lucide="code-2" class="w-3.5 h-3.5"></i> Code Generation
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Manual Creator Node -->
         <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4">
           <div class="flex justify-between items-center border-b border-slate-800/60 pb-3">

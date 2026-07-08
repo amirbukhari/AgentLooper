@@ -91,9 +91,11 @@ agentic/multi-agent LLM behavior who wants to:
 - **Sandbox mode** — the default, no-auth mode. Agents only see the
   `WRITE_GDRIVE`/`READ_GDRIVE` mock file tools; Gmail/Calendar/Sheets tools
   are not advertised to the model until a real Google account is connected.
-- **Presets** — built-in starter ecosystems that seed a directory with a
+- **Presets** — built-in starter ecosystems that populate a directory with a
   ready-made set of agents: a **band-manager** preset (default) and a
-  **code-generation** agent team.
+  **code-generation** agent team. Applied automatically only to an empty
+  directory, or explicitly (and destructively) via the Starter Presets
+  panel. Full spec: 7.6.
 - **AI Architect ecosystem builder** — a one-shot Gemini call, distinct from
   a preset, that generates a 2–4-agent team from a free-text goal the user
   types in, and adds it into the current directory. Full spec: 7.8.
@@ -329,15 +331,31 @@ data model, and the agent's `memory` is not updated for a failed attempt
 
 ### 7.6 Presets
 
-- Two built-in presets, keyed `band` (default) and a code-generation team,
-  each defining a fixed set of agents (name, persona, theme) and an
-  `initialTask` used to pre-fill the manual task-prompt field.
-- A preset only seeds a directory when that directory currently has **zero**
-  agents (`Object.keys(state.agents).length === 0`) — loading a preset into
-  a directory that already has agents is a no-op for seeding purposes.
-- Loading a preset via the UI is blocked with a toast
+Two built-in presets, keyed `band` (default, agents: Manager/Booking/Merch)
+and `code` (agents: Architect/Coder/Tester), each defining a fixed set of
+agents (name, persona, theme) and an `initialTask` (`target` agent id +
+`prompt` text). There are two distinct, differently-behaved paths that use
+this data:
+
+- **Automatic seed-on-empty** (`loadWorkspaceState`, used at boot and when
+  switching to/creating a directory): seeds the `band` preset **only** when
+  the target directory currently has **zero** agents
+  (`Object.keys(state.agents).length === 0`); a directory that already has
+  at least one agent is left untouched by this path. This only ever fires
+  automatically for the default/restored boot workspace — directories
+  created via 7.7's "Create" flow start empty and are not auto-seeded.
+- **Manual "Load Preset" action** (`loadDemoPreset`, triggered by the
+  **Starter Presets** panel's "Band Manager" / "Code Generation" buttons in
+  the Agent Hub tab): unconditionally **replaces** the current directory's
+  `agents`, `taskQueue`, and node `positions` with the chosen preset's
+  agents and a freshly reset queue/graph layout, **regardless of whether the
+  directory already has agents** — this is a destructive reset, not an
+  additive seed. It also clears the console feed (`clearConsole()`) and
+  pre-fills the task-prompt field and task-target-agent select from the
+  preset's `initialTask`. It is blocked with a toast
   (`"Clear active running tasks before loading presets."`) while any task in
-  the directory is `status: "processing"`.
+  the directory is `status: "processing"`, and shows a success toast
+  (`"Loaded preset environment: <band|code>"`) otherwise.
 
 ### 7.7 Directory lifecycle
 
@@ -539,60 +557,72 @@ testable.
     with the `band` preset's agents.
 
 **Presets (7.6)**
-19. Given a directory already has 1 or more agents, when a preset is loaded
-    into it, then no preset agents are added (the directory's agent set is
-    unchanged).
-20. Given a task in the directory has `status: "processing"`, when a preset
-    load is attempted, then it is rejected with the
-    "Clear active running tasks..." toast and no agents are added.
+19. Given the app boots with no persisted state and no other seeding has
+    happened yet, then the default directory is auto-seeded with the `band`
+    preset's 3 agents (Manager, Booking, Merch).
+20. Given a directory already has 1 or more agents, when that directory is
+    (re-)loaded via `loadWorkspaceState` (boot restore or directory switch),
+    then no preset agents are auto-seeded into it (the directory's agent set
+    is unchanged by this path).
+21. Given a directory with any existing agents and/or queued tasks (none
+    `processing`), when the user clicks "Band Manager" or "Code Generation"
+    in the Starter Presets panel, then the directory's `agents` and
+    `taskQueue` are fully replaced with the chosen preset's 3 agents and an
+    empty queue, the console feed is cleared, the task-prompt field and
+    task-target-agent select reflect the preset's `initialTask`, and a
+    "Loaded preset environment: `<band|code>`" toast appears.
+22. Given a task in the directory has `status: "processing"`, when a Starter
+    Presets button is clicked, then the load is rejected with the
+    "Clear active running tasks..." toast and neither `agents` nor
+    `taskQueue` are modified.
 
 **Directory lifecycle (7.7)**
-21. Given a directory named `"Foo"` already exists, when a user attempts to
+23. Given a directory named `"Foo"` already exists, when a user attempts to
     create another directory also named exactly `"Foo"`, then creation is
     rejected with the "A directory with that name already exists." toast.
-22. Given a task in the current directory has `status: "processing"`, when
+24. Given a task in the current directory has `status: "processing"`, when
     the user selects a different directory from the dropdown, then the
     switch is blocked, the dropdown reverts to the current directory, and
     the "Cannot switch workspaces..." toast is shown.
-23. There is no UI control, tag, or function that renames or deletes an
+25. There is no UI control, tag, or function that renames or deletes an
     existing directory (verifiable by absence in the codebase — see 7.7).
 
 **Non-functional requirements (8)**
-24. Given the app is opened via `file://` instead of `http(s)://`, then
+26. Given the app is opened via `file://` instead of `http(s)://`, then
     Google sign-in fails to complete (Google Identity Services requires a
     secure context) while sandbox mode (no sign-in, no `[SEND_GMAIL]`/
     `[CREATE_EVENT]`/etc. tags advertised) remains fully usable.
-25. Given the latest stable release of Chrome, Edge, Firefox, or Safari on
+27. Given the latest stable release of Chrome, Edge, Firefox, or Safari on
     desktop Windows/macOS/Linux, then the app loads and sandbox mode is
     fully functional with no console errors on boot; no other browser is a
     supported target.
-26. Given the same directory open in two browser tabs, when both tabs
+28. Given the same directory open in two browser tabs, when both tabs
     mutate state and both eventually fire `persistState()` (e.g., via
     `beforeunload`), then `localStorage["agentlooper_state_v1"]` reflects
     only the last tab to write — the other tab's unsaved-at-that-point
     changes are gone, with no error surfaced to either tab.
-27. Given the repository as checked out, then no `package.json` build/compile
+29. Given the repository as checked out, then no `package.json` build/compile
     script is required to run the app — `index.html` is directly loadable by
     a browser (via `npm run dev`'s static file server or any other static
     server) with zero transpilation step.
-28. There is no accessibility audit, WCAG-conformance check, or automated
+30. There is no accessibility audit, WCAG-conformance check, or automated
     a11y test in CI — verifiable by absence from `.github/workflows/ci.yml`
     (only `npm run lint` runs there).
 
 **AI Architect ecosystem builder (7.8)**
-29. Given an empty goal string, when the "Autogenerate Ecosystem" action is
+31. Given an empty goal string, when the "Autogenerate Ecosystem" action is
     triggered, then no Gemini call is made and a toast reading "Please
     describe what ecosystem you want to build." is shown.
-30. Given a valid goal and a directory with 38 existing agents, when Gemini
+32. Given a valid goal and a directory with 38 existing agents, when Gemini
     returns 4 agents in its structured response, then 2 are created (filling
     the cap to 40) and 2 are skipped with a logged agent-cap error each —
     the run as a whole still reports success (the toast and prompt-prefill
     still occur) since the top-level call succeeded.
-31. Given Gemini returns text that fails `JSON.parse`, then zero agents are
+33. Given Gemini returns text that fails `JSON.parse`, then zero agents are
     added to the directory, a SYSTEM log line prefixed "Failed to generate
     architecture:" appears, an error toast is shown, and the trigger button
     is re-enabled with its original label.
-32. Given a successful run whose `initialTask.targetAgent` (after
+34. Given a successful run whose `initialTask.targetAgent` (after
     sanitization) does not match any agent actually created this run or
     already present, then the task-target dropdown falls back to the first
     agent in the directory's `agents` object, and no task is auto-enqueued
