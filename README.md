@@ -42,8 +42,10 @@ the whole system before connecting any Google account.
 - **Live scheduler.** A 1-second clock loop drives triggers, scheduled loops, and
   the task queue, with real-time observability on the agent message lines.
 - **Bring-your-own Google account.** A single OAuth consent covers Gemini
-  (`cloud-platform`), Drive (`drive.file`), Gmail (`gmail.compose`), Calendar
-  (`calendar.events`), and Sheets (`spreadsheets`). Nothing is proxied through a server.
+  (`cloud-platform` + `generative-language.retriever` — both are required; `cloud-platform`
+  alone gets rejected by the Gemini API with a 403), Drive (`drive.file`), Gmail
+  (`gmail.compose`), Calendar (`calendar.events`), and Sheets (`spreadsheets`). Nothing is
+  proxied through a server.
 - **Sandbox vs. real Drive.** Start against mock files; flip to real Google Drive
   once signed in.
 - **Starter presets.** A band-manager (default) and code-generation agent team are built in.
@@ -90,8 +92,16 @@ Then, in the [Google Cloud Console](https://console.cloud.google.com/):
    **Authorized JavaScript origins**.
 3. Enable the APIs the tools use: **Gemini API**, **Google Drive API**, **Gmail API**,
    **Google Calendar API**, and **Google Sheets API**.
-4. Add the required scopes to the OAuth consent screen: `cloud-platform`, `drive.file`,
-   `userinfo.email`, `gmail.compose`, `calendar.events`, `spreadsheets`.
+4. Add the required scopes to the OAuth consent screen: `cloud-platform`,
+   `generative-language.retriever`, `drive.file`, `userinfo.email`, `gmail.compose`,
+   `calendar.events`, `spreadsheets`.
+
+> **Gemini calls need _both_ `cloud-platform` and `generative-language.retriever`.**
+> `cloud-platform` alone is not sufficient — Google's Generative Language API
+> (`generativelanguage.googleapis.com`) rejects it with `403 Request had insufficient
+authentication scopes` unless `generative-language.retriever` is also granted. If you
+> add this scope after users have already signed in, they must sign out and sign in again
+> — a previously-issued token won't retroactively gain the new scope.
 
 > The Gmail, Calendar, and Sheets tools only appear to agents once a real Google account
 > is connected — in sandbox mode agents only see the Drive tools.

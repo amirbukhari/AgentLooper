@@ -303,7 +303,11 @@ on it, and (per 7.2) still counts against `MAX_QUEUE` until they do.
 ### 7.3 Google Workspace integration
 
 - A single Google OAuth consent (Google Identity Services token client)
-  grants scopes for: Gemini (`cloud-platform`), Drive (`drive.file`), Gmail
+  grants scopes for: Gemini (`cloud-platform` **and**
+  `generative-language.retriever` — both are required; per Google's own
+  OAuth quickstart, `generativelanguage.googleapis.com`'s `generateContent`
+  rejects a token that has `cloud-platform` alone with `403 Request had
+insufficient authentication scopes`), Drive (`drive.file`), Gmail
   (`gmail.compose`), Calendar (`calendar.events`), Sheets (`spreadsheets`),
   and `userinfo.email`.
 - The resulting access token and its expiry are held in
@@ -328,9 +332,13 @@ on it, and (per 7.2) still counts against `MAX_QUEUE` until they do.
   candidate) fails immediately without retrying. Exhausting all retries
   throws, which is caught by the task-failure path in 7.1.
 - After sign-in, the app detects and warns the user (toast + console log +
-  `console.warn`) if the `cloud-platform` scope was not actually granted
-  (e.g., the user unchecked it in the consent screen), since Gemini calls
-  will otherwise fail with an opaque 403.
+  `console.warn`) if either Gemini-required scope (`cloud-platform` or
+  `generative-language.retriever`) was not actually granted (e.g., the user
+  unchecked one in the consent screen, or the OAuth consent screen in
+  Google Cloud Console doesn't have `generative-language.retriever`
+  authorized at all — in which case Google silently omits it from every
+  token regardless of what the user checks), since Gemini calls will
+  otherwise fail with an opaque 403.
 - A live **Connectors panel** shows per-service (Gmail, Calendar, Sheets)
   connection status and a short recent-activity log
   (`logConnectorActivity`), populated from the same tag-execution paths in

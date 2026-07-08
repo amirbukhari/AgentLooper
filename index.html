@@ -1342,6 +1342,11 @@ Your output must be purely JSON, matching this schema:
         scope: [
           'https://www.googleapis.com/auth/drive.file',
           'https://www.googleapis.com/auth/cloud-platform',
+          // Required by generativelanguage.googleapis.com's generateContent endpoint —
+          // cloud-platform alone is NOT sufficient for it and Google returns a 403
+          // "insufficient authentication scopes" without this one, per Google's own
+          // OAuth quickstart (ai.google.dev/gemini-api/docs/oauth).
+          'https://www.googleapis.com/auth/generative-language.retriever',
           'https://www.googleapis.com/auth/userinfo.email',
           'https://www.googleapis.com/auth/gmail.compose',   // create drafts AND send mail
           'https://www.googleapis.com/auth/calendar.events',
@@ -1358,10 +1363,15 @@ Your output must be purely JSON, matching this schema:
           // "successful" sign-in can still come back missing one. Catch that now, since
           // it otherwise only surfaces later as a confusing 403 from whichever API needed it.
           const grantedScopes = (tokenResponse.scope || '').split(' ').filter(Boolean);
-          if (!grantedScopes.includes('https://www.googleapis.com/auth/cloud-platform')) {
-            console.warn("Google sign-in did not grant cloud-platform scope. Granted scopes:", grantedScopes);
-            logConsoleEvent("SYSTEM", `⚠️ Signed in, but the "Cloud Platform" permission checkbox was not granted — Gemini calls will fail with a 403 until you sign in again and leave that box checked.`, "error");
-            showToast('Signed in, but Gemini access wasn\'t granted — sign in again and keep the Cloud Platform box checked.', "alert-triangle", "error");
+          const geminiScopes = [
+            'https://www.googleapis.com/auth/cloud-platform',
+            'https://www.googleapis.com/auth/generative-language.retriever'
+          ];
+          const missingGeminiScopes = geminiScopes.filter(s => !grantedScopes.includes(s));
+          if (missingGeminiScopes.length > 0) {
+            console.warn("Google sign-in did not grant the scope(s) Gemini needs:", missingGeminiScopes, "Granted scopes:", grantedScopes);
+            logConsoleEvent("SYSTEM", `⚠️ Signed in, but missing permission(s) Gemini needs (${missingGeminiScopes.join(', ')}) — Gemini calls will fail with a 403 until you sign in again and grant all requested permissions.`, "error");
+            showToast("Signed in, but Gemini access wasn't fully granted — sign in again and accept all requested permissions.", "alert-triangle", "error");
           } else {
             console.log("Google sign-in granted scopes:", grantedScopes);
           }
